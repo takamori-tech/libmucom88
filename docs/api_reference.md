@@ -151,13 +151,13 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 
 `setDucking()` を設定すると、`playVoice()` 呼び出し時にFM/SSGが即座に減衰し、
 ボイス終了後に releaseSec かけて元の音量に復帰する。
-ADPCM-A（リズム）とADPCM-B（ボイス）には影響しない。
+ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が減衰対象。
 
 ### 音量制御
 
 | メソッド | 説明 |
 |---------|------|
-| `setGlobalAttenuation(att)` | グローバル減衰設定。FM: TL加算(0-127)、SSG: att/4で換算。ADPCM-A/Bには影響しない |
+| `setGlobalAttenuation(att)` | グローバル減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A: att*63/127でTL減衰。ADPCM-Bには影響しない |
 | `globalAttenuation()` | 現在の減衰値 |
 
 ### 状態取得

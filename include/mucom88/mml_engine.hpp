@@ -368,7 +368,7 @@ public:
 
     // ── グローバル減衰（ダッキング用）────────────────────
     // att: FM TL加算値（0=通常、20≈-15dB）。SSGはatt/4で換算。
-    // ADPCM-A/Bには影響しない（レジスタが別系統のため）。
+    // ADPCM-Aはatt*63/127でTL減衰。ADPCM-Bには影響しない。
     void setGlobalAttenuation(int att)
     {
         m_globalAtt = att;
@@ -386,6 +386,12 @@ public:
                 m_engine->writeReg(0, 0x08 + si, (uint8_t)(vol & 0x0F));
             }
         }
+        // 即時反映: ADPCM-A 全体音量TL を減衰
+        // reg 0x11: 6bit TL（0x3F=最大、0x00=無音、ymfm内部で^0x3F反転）
+        // att=0→元のTLをそのまま、att=127→TLを0にする
+        int rhythmAtt = m_globalAtt * 63 / 127;
+        int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
+        m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
     }
     int globalAttenuation() const { return m_globalAtt; }
 
