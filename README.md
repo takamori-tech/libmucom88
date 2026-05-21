@@ -1,49 +1,49 @@
-# libmucom88-mml
+# libmucom88
 
-MUCOM88-compatible MML parser and sequencer library for YM2608 (OPNA).
+MUCOM88互換 MMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ライブラリ（YM2608 / OPNA）。
 
-Header-only C++17 library with zero external dependencies.
+ヘッダーオンリーC++17。外部依存なし。
 
-## Overview
+## 概要
 
-This library provides a complete MML (Music Macro Language) parser and sequencer compatible with [MUCOM88](https://www.ancient.co.jp/~mucom88/), the music driver created by Yuzo Koshiro for the NEC PC-8801.
+[MUCOM88](https://www.ancient.co.jp/~mucom88/)（古代祐三氏がNEC PC-8801向けに開発した音楽ドライバー）と互換のMMLパーサー＋シーケンサーを提供する。MMLテキストからYM2608のレジスタ書き込みを生成し、任意のYM2608エミュレータ（fmgen, ymfm等）をバックエンドとして使用できる。
 
-It converts MML text into YM2608 register writes through an abstract FM engine interface, allowing any YM2608 emulator (fmgen, ymfm, etc.) to be used as the backend.
+BGM再生に加え、ADPCM-Bを使ったゲームボイス再生にも対応。BGM再生中にボイスを差し込む際のKトラック優先制御（BGMのADPCM-Bを自動抑制）を内蔵。
 
-## Architecture
+## アーキテクチャ
 
 ```
-MML text (.muc)
-    |
-    v
-MmlParser  --- parses MML, expands macros, generates events
-    |
-    v
-MmlEngine  --- sequences events, drives Timer-B, writes registers
-    |
-    v
-IFmEngine  --- abstract interface (writeReg, generateInterleaved, ...)
-    |
-    v
-[Your YM2608 emulator]  (fmgen, ymfm, etc.)
+MUCテキスト (.muc)
+    │
+    ▼
+MmlParser ── パース、マクロ展開、イベント列生成
+    │
+    ▼
+MmlEngine ── シーケンス再生、Timer-B駆動、レジスタ書き込み
+    │         ボイス再生時のKトラック優先制御
+    ▼
+IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
+    │
+    ▼
+[YM2608エミュレータ]  （fmgen, ymfm 等）
 ```
 
-## Usage
+## クイックスタート
 
 ```cpp
 #include <mucom88/mml_parser.hpp>
 #include <mucom88/mml_engine.hpp>
 #include <mucom88/fm_engine_interface.hpp>
 
-// 1. Implement IFmEngine with your YM2608 emulator
+// 1. IFmEngine を YM2608 エミュレータで実装
 class MyFmEngine : public IFmEngine { /* ... */ };
 
-// 2. Parse MML
+// 2. MMLパース
 MmlParser parser;
 parser.loadVoiceDat("voice.dat");
 auto result = parser.parse(mmlText);
 
-// 3. Set up engine
+// 3. エンジンセットアップ
 MyFmEngine fmEngine;
 fmEngine.init(44100);
 
@@ -55,66 +55,73 @@ engine.setWholeTick(result.wholeTick);
 for (int ch = 0; ch < 11; ch++)
     engine.setEvents(ch, result.channelEvents[ch]);
 
-// 4. Play
+// 4. 再生
+engine.setLoop(true);
 engine.play();
 while (engine.isPlaying()) {
-    engine.advance(256);  // advance by 256 samples
+    engine.advance(256);
     int16_t buf[512];
     fmEngine.generateInterleaved(buf, 256);
-    // ... output buf to audio device
+    // ... buf をオーディオデバイスへ出力
 }
+
+// 5. ボイス再生（BGM中に差し込み可能）
+fmEngine.loadVoiceTable("voice_table.bin");
+engine.playVoice(0);  // BGMのKトラックは自動抑制
 ```
 
-## Files
+## ドキュメント
 
-| File | Description |
-|------|-------------|
-| `fm_common.hpp` | FM patch definitions, frequency tables, voice.dat parser |
-| `fm_engine_interface.hpp` | `IFmEngine` abstract interface |
-| `mml_parser.hpp` | MML parser (MUCOM88 format, 93+ files validated) |
-| `mml_engine.hpp` | MML sequencer (Timer-B timing, 11ch, reverb, LFO, portamento) |
+- **[ゲームプログラム組み込みガイド](docs/integration_guide.md)** — IFmEngine実装、BGM再生、ボイス再生、ダッキング
+- **[APIリファレンス](docs/api_reference.md)** — 全クラス・メソッドの詳細
 
-## Supported MML Features
+## ファイル構成
 
-- **11 channels**: FM (6ch), SSG (3ch), Rhythm (1ch), ADPCM-B (1ch)
-- **Notes**: `cdefgab`, octave `<>o`, sharp `+#`, flat `-`, rest `r`
-- **Length**: `l` default, numeric suffix, dot `.` (multiple dots), tie `&`, `^` extension
-- **Volume**: `v` (FM: FMVDAT table, SSG: 0-15, ADPCM-B: 0-255), `()` relative
-- **Tempo**: `t` (BPM), `T` (Timer-B direct), `C` (clock)
-- **Patch**: `@N` (voice.dat), inline voice definitions
-- **Loop**: `[...]N`, `/` break, `L` loop point
-- **Macro**: `*N{...}` definition, `*N` expansion
-- **Effects**: `q` staccato, `D` detune, `M` vibrato (software LFO), `H` hardware LFO
-- **Reverb**: `R` (pseudo-reverb via TL decay), `RF` on/off, `Rm` mode
-- **Portamento**: `{note1 note2}` pitch slide
-- **Echo**: `\=N,M` / `\` echo macro
-- **Register**: `y` direct register write, `k` key transpose, `p` pan
-- **SSG**: `@N` presets (SSGDAT software envelope), `E` custom ADSR envelope
-- **Rhythm**: `@` instrument bitmask, `v` per-instrument levels
-- **ADPCM-B**: K track with delta-N pitch, mucompcm.bin sample playback
+| ファイル | 内容 |
+|---------|------|
+| `fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー |
+| `fm_engine_interface.hpp` | IFmEngine 抽象インターフェース |
+| `mml_parser.hpp` | MMLパーサー（MUCOM88形式、132曲検証済み） |
+| `mml_engine.hpp` | MMLシーケンサー（Timer-B駆動、11ch、リバーブ、LFO、ポルタメント） |
 
-## Integration
+## 対応MML機能
 
-Add as a git submodule:
+- **11チャンネル**: FM(6ch) + SSG(3ch) + リズム(1ch) + ADPCM-B(1ch)
+- **音符**: `cdefgab`、オクターブ `<>o`、シャープ `+#`、フラット `-`、休符 `r`
+- **音長**: `l`デフォルト、数値、付点`.`（複数）、タイ `&`/`^`
+- **音量**: `v`（FM: FMVDATテーブル、SSG: 0-15、ADPCM-B: 0-255）、`()`相対
+- **テンポ**: `t`(BPM)、`T`(Timer-B直接)、`C`(クロック)
+- **音色**: `@N`(voice.dat/インライン)、`@"name"`(名前検索)
+- **ループ**: `[...]N`、`/`(ブレーク)、`L`(曲全体ループ)
+- **マクロ**: `*N{...}`定義、`*N`展開
+- **エフェクト**: `q`スタッカート、`D`デチューン、`M`ビブラート、`H`ハードウェアLFO
+- **リバーブ**: `R`(擬似リバーブ)、`RF`(ON/OFF)、`Rm`(モード)
+- **ポルタメント**: `{note1 note2}`
+- **エコー**: `\=N,M` / `\`
+- **SSG**: `@N`プリセット(SOFENVソフトウェアエンベロープ)、`E`カスタムADSR
+- **リズム**: `@`楽器ビットマスク、`v`楽器別レベル
+- **ADPCM-B**: Kトラック、delta-Nピッチ、mucompcm.binマルチサンプル
+
+## 組み込み方法
+
 ```bash
-git submodule add https://github.com/takamori-tech/libmucom88-mml.git vendor/libmucom88-mml
+git submodule add https://github.com/takamori-tech/libmucom88.git vendor/libmucom88
 ```
 
-Add include path in CMakeLists.txt:
 ```cmake
-target_include_directories(your_target PRIVATE vendor/libmucom88-mml/include)
+target_include_directories(your_target PRIVATE vendor/libmucom88/include)
 ```
 
-## Projects Using This Library
+## 利用プロジェクト
 
-- [CLAUDIUS](https://github.com/takamori-tech/rpi5-native-game) - Retro STG game for Raspberry Pi
-- [MUCOM88V](https://github.com/takamori-tech/mucom88v) - YM2608 VST/AU plugin
+- [CLAUDIUS](https://github.com/takamori-tech/rpi5-native-game) — レトロSTGゲーム（Raspberry Pi）
+- [MUCOM88V](https://github.com/takamori-tech/mucom88v) — YM2608 VST/AUプラグイン
 
-## License
+## ライセンス
 
 MIT License
 
-## Credits
+## クレジット
 
-- MML format: [MUCOM88](https://www.ancient.co.jp/~mucom88/) by Yuzo Koshiro
-- Parser/Sequencer: takamori-tech + Claude (Anthropic)
+- MML形式: [MUCOM88](https://www.ancient.co.jp/~mucom88/) by 古代祐三
+- パーサー/シーケンサー: takamori-tech + Claude (Anthropic)

@@ -1,0 +1,411 @@
+# libmucom88 ゲームプログラム組み込みガイド
+
+MUCOM88互換のMMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ライブラリ。
+ゲームプログラムからYM2608(OPNA)でBGM再生・ボイス再生を行うための組み込み手順を説明する。
+
+## 前提
+
+- C++17 以上
+- YM2608エミュレータ（fmgen または ymfm）を自前で用意すること
+- libmucom88 自体はヘッダーオンリー（外部依存なし）
+
+## プロジェクトへの追加
+
+```bash
+git submodule add https://github.com/takamori-tech/libmucom88.git vendor/libmucom88
+```
+
+```cmake
+target_include_directories(your_target PRIVATE vendor/libmucom88/include)
+```
+
+## アーキテクチャ
+
+```
+MUCファイル (.muc)
+    │
+    ▼
+MmlParser ── MMLテキストをパース、マクロ展開、イベント列を生成
+    │
+    ▼
+MmlEngine ── イベント列を再生、Timer-B駆動、YM2608レジスタ書き込み
+    │         ボイス再生時のKトラック優先制御も担当
+    ▼
+IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
+    │
+    ▼
+[YM2608エミュレータ]  （fmgen, ymfm 等）
+```
+
+## ヘッダー一覧
+
+| ヘッダー | 内容 |
+|----------|------|
+| `mucom88/fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー |
+| `mucom88/fm_engine_interface.hpp` | IFmEngine 抽象インターフェース |
+| `mucom88/mml_parser.hpp` | MMLパーサー（MucFile構造体を出力） |
+| `mucom88/mml_engine.hpp` | MMLシーケンサー（Timer-B駆動、11チャンネル制御） |
+
+## IFmEngine の実装
+
+ゲーム側で YM2608 エミュレータをラップして IFmEngine を実装する必要がある。
+
+### 必須メソッド
+
+```cpp
+#include <mucom88/fm_engine_interface.hpp>
+
+class MyFmEngine : public IFmEngine {
+public:
+    // 初期化（出力サンプルレート指定）
+    void init(uint32_t sampleRate) override;
+
+    // YM2608 レジスタ書き込み
+    // port=0: FM ch1-3, SSG, リズム, ADPCM-B制御
+    // port=1: FM ch4-6
+    void writeReg(int port, uint8_t addr, uint8_t data) override;
+
+    // ステレオPCM生成（インターリーブ L,R,L,R,...）
+    void generateInterleaved(int16_t* buf, uint32_t frameCount) override;
+
+    // チップリセット
+    void reset() override;
+
+    // ADPCM-A ROM ロード（リズム音源用、ym2608_adpcm_rom.bin）
+    bool loadAdpcmRom(const std::string& path) override;
+    bool loadAdpcmRomFromMemory(const uint8_t* data, size_t size) override;
+    bool hasAdpcmRom() const override;
+
+    // ADPCM-B ボイステーブル（ゲームボイス用）
+    bool loadVoiceTable(const std::string& path) override;
+    bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) override;
+    bool hasVoiceTable() const override;
+    void playVoice(int voiceId) override;
+    void stopVoice() override;
+    bool isVoicePlaying() const override;
+    void tickVoiceTimer(uint32_t frameCount) override;
+    void stopAdpcmB() override;
+};
+```
+
+### ボイステーブル形式
+
+`voice_table.bin` のバイナリ形式:
+
+```
+[num_voices: uint32]                          // ボイス数（最大64）
+[offset: uint32, size: uint32] × num_voices   // 各ボイスの開始位置とサイズ
+[ADPCM-Bデータ...]                            // 実データ（16kHz, 4bit ADPCM-B）
+```
+
+`playVoice(voiceId)` の実装では:
+1. パンをミュート（ポップノイズ防止）
+2. ADPCM-Bをリセット
+3. 開始/終了アドレスを設定
+4. delta-N = 0x49BA（16kHz再生）
+5. レベル最大 + 再生開始
+6. パン L+R を復元
+
+`tickVoiceTimer(frameCount)` でボイス再生の残り時間を追跡し、完了を検出する。
+
+## BGM再生の基本フロー
+
+```cpp
+#include <mucom88/mml_parser.hpp>
+#include <mucom88/mml_engine.hpp>
+
+// 1. IFmEngine実装のインスタンスを作成
+MyFmEngine fmEngine;
+fmEngine.init(44100);
+
+// 2. MMLパース
+MmlParser parser;
+parser.loadVoiceDat("voice.dat");            // MUCOM88形式の音色ファイル
+auto result = parser.parse(mucFileContent);  // MUCテキストをパース
+
+// 3. MmlEngineセットアップ
+MmlEngine engine;
+engine.init(&fmEngine, 44100);
+
+// 音色をエンジンに登録
+for (auto& [no, patch] : result.patches)
+    engine.setPatch(no, patch);
+
+// 全音符クロック数を設定
+engine.setWholeTick(result.wholeTick);
+
+// チャンネルイベントをロード（A-K = 11チャンネル）
+for (int ch = 0; ch < 11; ch++)
+    engine.setEvents(ch, result.channelEvents[ch]);
+
+// ループ設定
+engine.setLoop(true);
+
+// 4. 再生開始
+engine.play();
+```
+
+## mucompcm.bin（ADPCM-Bサンプル）のロード
+
+BGM中のKトラック（ADPCM-B楽器再生）で使用するPCMデータ:
+
+```cpp
+// mucompcm.bin を読み込み
+std::ifstream ifs("mucompcm.bin", std::ios::binary);
+std::vector<uint8_t> pcmData(
+    std::istreambuf_iterator<char>(ifs),
+    std::istreambuf_iterator<char>());
+
+if (pcmData.size() > 0x400) {
+    // fmgen/ymfm の ADPCM-B バッファにデータ部分をロード
+    fmEngine.loadPcmDataToAdpcmB(
+        pcmData.data() + 0x400, pcmData.size() - 0x400);
+    // MmlEngine に PCM テーブル（マルチサンプル情報）をロード
+    engine.loadPcmData(pcmData.data(), pcmData.size());
+}
+```
+
+mucompcm.bin の形式:
+- ヘッダ 0x400 バイト（最大32エントリ × 32バイト/エントリ）
+  - [0-15] 音色名、[28-29] 開始アドレス、[30-31] データ長（256バイト単位）
+- ヘッダ以降: ADPCM-B生データ
+- MMLの `@N` でプログラムチェンジ（サンプル切り替え）
+
+## オーディオコールバック
+
+16サンプル単位で advance + generateInterleaved を呼ぶのが最適。
+OpenMUCOM88（Z80 VM）と同じ粒度でTimer-Bタイミングが一致する。
+
+```cpp
+// SDL2 オーディオコールバックの例
+void audioCallback(void* userdata, uint8_t* stream, int len) {
+    auto* bgm = static_cast<BgmPlayer*>(userdata);
+    int16_t* out = reinterpret_cast<int16_t*>(stream);
+    uint32_t frameCount = len / (2 * sizeof(int16_t));  // ステレオ
+
+    uint32_t remaining = frameCount;
+    uint32_t offset = 0;
+    while (remaining > 0) {
+        uint32_t n = std::min(remaining, (uint32_t)16);
+
+        // MMLシーケンサーを進める（レジスタ書き込みが発生）
+        engine.advance(n);
+
+        // YM2608エミュレータで音声生成
+        int16_t buf[32];  // max 16 frames × 2ch
+        fmEngine.generateInterleaved(buf, n);
+
+        std::memcpy(out + offset * 2, buf, n * 2 * sizeof(int16_t));
+        offset += n;
+        remaining -= n;
+    }
+}
+```
+
+## ボイス再生（ADPCM-B）
+
+ゲーム中のボイスコール（"Destroy them all!" 等）をBGM再生中に差し込む。
+MmlEngineのボイス再生APIを使うと、BGMのKトラック（ADPCM-B）を自動的に抑制する。
+
+```cpp
+// ボイステーブルのロード（起動時に1回）
+fmEngine.loadVoiceTable("voice_table.bin");
+
+// ボイス再生（BGM再生中でも安全に呼べる）
+engine.playVoice(0);   // voiceId=0 のボイスを再生
+
+// ボイス再生中はBGMのKトラックイベント処理が自動的に抑制される
+// （m_voiceOverrideフラグによるKトラック優先制御）
+
+// ボイス終了検出
+if (engine.isVoicePlaying()) {
+    // まだ再生中
+}
+
+// 明示的に停止
+engine.stopVoice();
+```
+
+### ダッキング（BGM減衰）
+
+ボイス再生中にBGM音量を下げて聞き取りやすくする:
+
+```cpp
+// MmlEngine のグローバル減衰を使う方法
+// att: FM TL加算値（0=通常、20≈-15dB）、SSGはatt/4で換算
+engine.setGlobalAttenuation(20);  // ボイス再生開始時
+
+// ボイス終了後に復元
+engine.setGlobalAttenuation(0);
+```
+
+または出力バッファに直接ゲインを掛ける方法（より柔軟）:
+
+```cpp
+float duckGain = 1.0f;
+float duckTarget = 0.3f;   // ボイス中はBGMを30%に
+
+// render後にゲイン適用
+for (uint32_t i = 0; i < frameCount * 2; i++)
+    buf[i] = (int16_t)(buf[i] * duckGain);
+```
+
+## チャンネル状態の取得（UI表示用）
+
+```cpp
+// チャンネル番号: 0-2=FM(A-C), 3-5=SSG(D-F), 6=Rhythm(G), 7-9=FM(H-J), 10=ADPCM-B(K)
+
+bool noteOn   = engine.chNoteOn(ch);      // ノートオン中か
+int  note     = engine.chNote(ch);         // MIDIノート番号
+int  volume   = engine.chVolume(ch);       // 音量（FM: 0-15, SSG: 0-15）
+int  pan      = engine.chPan(ch);          // パン（1=L, 2=R, 3=L+R）
+int  reverb   = engine.chReverb(ch);       // リバーブ値（Rコマンド、FM専用）
+uint32_t cnt  = engine.chNoteOnCount(ch);  // noteOnカウンター（UIアクティビティ検出）
+
+bool playing  = engine.isPlaying();
+uint32_t tick = engine.globalTick();
+int  tempo    = engine.globalTempo();
+
+// チャンネル種別判定
+bool fm    = MmlEngine::isFM(ch);       // 0-2, 7-9
+bool ssg   = MmlEngine::isSSG(ch);      // 3-5
+bool rhythm = MmlEngine::isRhythm(ch);  // 6
+bool adpcmb = MmlEngine::isADPCMB(ch);  // 10
+```
+
+## ループ制御
+
+```cpp
+// ループ ON/OFF
+engine.setLoop(true);   // L コマンド位置に戻ってループ再生
+engine.setLoop(false);  // 曲末で停止
+
+// ループ情報取得
+uint32_t endTick  = engine.commonEndTick();     // 全チャンネルの最大endTick
+uint32_t loopTick = engine.loopTickOffset();     // ループ開始位置
+int loopCnt       = engine.loopCount();          // 現在のループ回数
+
+// フェードアウトの実装例
+// ループ2周目以降でグローバル減衰を徐々に増加
+if (engine.loopCount() >= 2) {
+    int att = std::min((engine.loopCount() - 1) * 5, 30);
+    engine.setGlobalAttenuation(att);
+}
+```
+
+## 曲メタデータ
+
+```cpp
+MmlParser parser;
+auto result = parser.parse(mucText);
+
+result.title;       // #title ディレクティブ
+result.composer;    // #composer ディレクティブ
+result.voiceFile;   // #voice ディレクティブ（voice.datファイル名）
+result.pcmFile;     // #pcm ディレクティブ（mucompcm.binファイル名）
+result.chipMode;    // ChipMode::OPNA / OPM / OPNB
+result.wholeTick;   // C コマンド（全音符クロック数、デフォルト128）
+```
+
+## BgmPlayer 実装例
+
+CLAUDIUSプロジェクトの `bgm_player.hpp` を参考にした最小実装:
+
+```cpp
+#include <mucom88/mml_parser.hpp>
+#include <mucom88/mml_engine.hpp>
+#include "my_fm_engine.hpp"  // IFmEngine 実装
+
+class BgmPlayer {
+public:
+    void init(uint32_t sampleRate) {
+        m_sampleRate = sampleRate;
+        m_fmEngine.init(sampleRate);
+        m_mmlEngine.init(&m_fmEngine, sampleRate);
+    }
+
+    bool loadMuc(const std::string& mucText,
+                 const std::string& voiceDatPath = {}) {
+        MmlParser parser;
+        if (!voiceDatPath.empty())
+            parser.loadVoiceDat(voiceDatPath);
+        m_result = parser.parse(mucText);
+
+        m_mmlEngine.init(&m_fmEngine, m_sampleRate);
+        for (auto& [no, patch] : m_result.patches)
+            m_mmlEngine.setPatch(no, patch);
+        m_mmlEngine.setWholeTick(m_result.wholeTick);
+        for (int ch = 0; ch < 11; ch++)
+            m_mmlEngine.setEvents(ch, m_result.channelEvents[ch]);
+        return true;
+    }
+
+    void play()    { m_mmlEngine.setLoop(m_loop); m_mmlEngine.play(); }
+    void stop()    { m_mmlEngine.stop(); m_mmlEngine.stopAdpcmB(); }
+    void pause()   { m_mmlEngine.pause(); }
+    void resume()  { m_mmlEngine.resume(); }
+    bool isPlaying() const { return m_mmlEngine.isPlaying(); }
+    void setLoop(bool l) { m_loop = l; m_mmlEngine.setLoop(l); }
+
+    // 16サンプル単位でadvance+generate（OpenMUCOM88互換タイミング）
+    void render(int16_t* out, uint32_t frameCount) {
+        uint32_t remaining = frameCount;
+        uint32_t offset = 0;
+        while (remaining > 0) {
+            uint32_t n = std::min(remaining, (uint32_t)16);
+            m_mmlEngine.advance(n);
+            int16_t buf[32];
+            m_fmEngine.generateInterleaved(buf, n);
+            std::memcpy(out + offset * 2, buf, n * 2 * sizeof(int16_t));
+            offset += n;
+            remaining -= n;
+        }
+    }
+
+    // ボイス再生
+    void playVoice(int id)  { m_mmlEngine.playVoice(id); }
+    void stopVoice()        { m_mmlEngine.stopVoice(); }
+    bool isVoicePlaying() const { return m_mmlEngine.isVoicePlaying(); }
+
+private:
+    MyFmEngine m_fmEngine;
+    MmlEngine  m_mmlEngine;
+    MmlParser::MucFile m_result;
+    uint32_t m_sampleRate = 44100;
+    bool m_loop = true;
+};
+```
+
+## 注意事項
+
+### Timer-Bと16サンプル粒度
+`advance()` は内部で16サンプル単位に分割して処理する。
+これはPC-8801実機のYM2608 Timer-B割り込みタイミングと一致させるため。
+16の倍数でないframeCountを渡しても正しく動作する。
+
+### スレッドセーフティ
+MmlEngine はスレッドセーフではない。`advance()` と `playVoice()` 等は
+同一スレッド（オーディオスレッド）から呼ぶこと。
+UIスレッドからの状態取得（`chNoteOn()` 等）はアトミックではないが、
+表示用途であれば実用上問題ない。
+
+### チップクロック
+デフォルトは 7,987,200 Hz（PC-8801 NTSC標準）。
+ymfm を使う場合は 8,000,000 Hz が標準だが、
+`MmlEngine::init()` の第3引数で指定できる。
+SSGの音程計算に影響する（Issue #22）。
+
+### MUCOM88 チャンネル構成
+| チャンネル | MML | 種別 | ポート |
+|-----------|-----|------|--------|
+| 0 (A) | FM ch1 | FM | port 0 |
+| 1 (B) | FM ch2 | FM | port 0 |
+| 2 (C) | FM ch3 | FM | port 0 |
+| 3 (D) | SSG ch1 | PSG矩形波 | port 0 |
+| 4 (E) | SSG ch2 | PSG矩形波 | port 0 |
+| 5 (F) | SSG ch3 | PSG矩形波 | port 0 |
+| 6 (G) | Rhythm | ADPCM-A (BD/SD/CY/HH/TM/RS) | port 0 |
+| 7 (H) | FM ch4 | FM | port 1 |
+| 8 (I) | FM ch5 | FM | port 1 |
+| 9 (J) | FM ch6 | FM | port 1 |
+| 10 (K) | ADPCM-B | 音程付きPCM | port 1 |
