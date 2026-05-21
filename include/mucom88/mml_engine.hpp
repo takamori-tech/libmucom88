@@ -17,6 +17,7 @@
 #include <vector>
 #include <array>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <unordered_map>
 #include "mml_parser.hpp"
@@ -51,6 +52,20 @@ public:
     static constexpr int MAX_FM_CHANNELS  = 6;
     // SSG 3チャンネル (D-F=3-5)
     static constexpr int MAX_SSG_CHANNELS = 3;
+
+    // ボイス再生＋ダッキング状態マシン（スレッド安全）
+    // ゲームスレッド(playVoice/stopVoice)とオーディオスレッド(tickVoiceTimer)間の
+    // 安全な状態遷移を std::atomic + CAS で実現する。
+    //   Idle → Playing:    playVoice()      [ゲームスレッド, store]
+    //   Playing → Releasing: tickVoiceTimer() [オーディオスレッド, CAS]
+    //   Releasing → Idle:  tickVoiceTimer()  [オーディオスレッド, store]
+    //   Any → Playing:     playVoice() 連続呼び出し [ゲームスレッド, store]
+    //   Any → Idle:        stopVoice()/stop() [exchange]
+    enum class VoiceDuckState : int {
+        Idle,       // ボイス未再生、ダッキングなし
+        Playing,    // ボイス再生中（Kトラック抑制 + 音量減衰）
+        Releasing   // ボイス終了、ダッキングリリース中（音量徐々に復帰）
+    };
 
     MmlEngine() : m_engine(nullptr), m_sampleRate(44100), m_chipClock(7987200), m_playing(false) {}
 
@@ -217,7 +232,7 @@ public:
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             auto& st = m_channels[ch];
             if (st.events.empty()) continue;
-            if (isADPCMB(ch) && m_voiceOverride) continue;
+            if (isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Playing) continue;
             processEvents(ch, m_globalTick);  // m_globalTick = 0
         }
 
@@ -228,7 +243,7 @@ public:
     void stop()
     {
         m_playing = false;
-        m_voiceOverride = false;
+        m_voiceDuckState.store(VoiceDuckState::Idle, std::memory_order_release);
         if (m_engine) allSoundOff();
     }
 
@@ -294,23 +309,21 @@ public:
             adpcmbKeyOff();
             m_channels[10].noteOn = false;
         }
-        m_voiceOverride = true;
+        // エンジンにボイス開始を指示（状態遷移より先に実行）
+        // → tickVoiceTimer側のCASが isVoicePlaying()=false を誤検出しない
         m_engine->playVoice(voiceId);
-        // ダッキング開始: FM/SSGを即座に減衰
+        // ダッキング開始: FM/SSGを即座に減衰（状態遷移前にレジスタ書き込み）
         if (m_duckEnabled) {
-            m_duckActive = true;
-            m_duckReleasing = false;
             setGlobalAttenuation(m_duckAttTarget);
         }
+        // 状態遷移は最後（release ordering で上記の書き込みを公開）
+        m_voiceDuckState.store(VoiceDuckState::Playing, std::memory_order_release);
     }
     void stopVoice() {
         if (!m_engine) return;
         m_engine->stopVoice();
-        m_voiceOverride = false;
-        // ダッキング即時解除
-        if (m_duckActive) {
-            m_duckActive = false;
-            m_duckReleasing = false;
+        auto prev = m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
+        if (prev != VoiceDuckState::Idle) {
             setGlobalAttenuation(0);
         }
     }
@@ -320,20 +333,27 @@ public:
     void tickVoiceTimer(uint32_t frameCount) {
         if (!m_engine) return;
         m_engine->tickVoiceTimer(frameCount);
-        if (m_voiceOverride && !m_engine->isVoicePlaying()) {
-            m_voiceOverride = false;
-            // ダッキングリリース開始
-            if (m_duckActive) {
-                m_duckReleasing = true;
-                m_duckReleaseSamplesLeft = m_duckReleaseSamples;
+        // ボイス終了検出 → ダッキングリリースへ遷移（CASで競合回避）
+        // CAS失敗 = ゲームスレッドが playVoice() で Playing を再セットした
+        //         → 新しいボイスが再生中なのでリリースしない
+        auto state = m_voiceDuckState.load(std::memory_order_acquire);
+        if (state == VoiceDuckState::Playing && !m_engine->isVoicePlaying()) {
+            auto next = m_duckEnabled ? VoiceDuckState::Releasing : VoiceDuckState::Idle;
+            VoiceDuckState expected = VoiceDuckState::Playing;
+            if (m_voiceDuckState.compare_exchange_strong(expected, next, std::memory_order_acq_rel)) {
+                if (next == VoiceDuckState::Releasing) {
+                    m_duckReleaseSamplesLeft = m_duckReleaseSamples;
+                } else {
+                    setGlobalAttenuation(0);
+                }
             }
         }
         // ダッキングリリース処理（徐々に減衰解除）
-        if (m_duckReleasing) {
+        state = m_voiceDuckState.load(std::memory_order_acquire);
+        if (state == VoiceDuckState::Releasing) {
             if (frameCount >= m_duckReleaseSamplesLeft) {
                 m_duckReleaseSamplesLeft = 0;
-                m_duckReleasing = false;
-                m_duckActive = false;
+                m_voiceDuckState.store(VoiceDuckState::Idle, std::memory_order_release);
                 setGlobalAttenuation(0);
             } else {
                 m_duckReleaseSamplesLeft -= frameCount;
@@ -346,10 +366,8 @@ public:
     void stopAdpcmB() {
         if (!m_engine) return;
         m_engine->stopAdpcmB();
-        m_voiceOverride = false;
-        if (m_duckActive) {
-            m_duckActive = false;
-            m_duckReleasing = false;
+        auto prev = m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
+        if (prev != VoiceDuckState::Idle) {
             setGlobalAttenuation(0);
         }
     }
@@ -538,7 +556,7 @@ public:
                         continue;
                     }
                     // ボイス再生中はKトラック(ch10)のイベント処理を抑制
-                    if (!(isADPCMB(ch) && m_voiceOverride)) {
+                    if (!(isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Playing)) {
                         processEvents(ch, m_globalTick);
                         if (st.noteOn && st.lfoEnabled && st.lfoDepth != 0)
                             tickLfo(ch);
@@ -1089,14 +1107,16 @@ private:
     // yコマンドやpコマンドで更新される。rhythmKeyOnで毎回書き込む。
     std::array<uint8_t, 6> m_rhythmIL = {0xDF,0xDF,0xDF,0xDF,0xDF,0xDF}; // L+R + level 31
     int         m_globalAtt  = 0;     // グローバル減衰（FM TL加算値、0=通常）
-    bool        m_voiceOverride = false; // ゲームボイス再生中: Kトラック(ch10)イベント抑制
-    // ダッキング（ボイス再生中のFM/SSG自動減衰）
+    // ボイス再生＋ダッキング状態マシン（スレッド安全）
+    // ゲームスレッド: playVoice/stopVoice で store/exchange
+    // オーディオスレッド: tickVoiceTimer で CAS 遷移
+    std::atomic<VoiceDuckState> m_voiceDuckState{VoiceDuckState::Idle};
+    static_assert(std::atomic<VoiceDuckState>::is_always_lock_free,
+                  "VoiceDuckState must be lock-free for real-time audio thread");
     bool        m_duckEnabled = false;   // ダッキング機能ON/OFF
-    bool        m_duckActive  = false;   // 現在ダッキング中
-    bool        m_duckReleasing = false; // リリース中（徐々に復帰）
     int         m_duckAttTarget = 20;    // 減衰量（FM TL加算値、20≈-15dB）
     uint32_t    m_duckReleaseSamples = 0;     // リリース時間（サンプル数）
-    uint32_t    m_duckReleaseSamplesLeft = 0;  // リリース残りサンプル数
+    uint32_t    m_duckReleaseSamplesLeft = 0;  // リリース残りサンプル数（オーディオスレッドのみ更新）
     int         m_pcmVolMode = 0;     // PVMODE: 0=IX+6のみ使用, 1=IX+6+IX+7
     int         m_pcmAddVol  = 0;     // ADPCM-B追加音量（PVMODE=1時のIX+7、V1→v設定）
 
