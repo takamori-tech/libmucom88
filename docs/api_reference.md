@@ -23,6 +23,8 @@ YM2608エミュレータの抽象インターフェース。ゲーム側で実�
 | `isVoicePlaying()` | ボイス再生中か |
 | `tickVoiceTimer(frameCount)` | ボイス再生タイマー更新 |
 | `stopAdpcmB()` | ADPCM-B強制停止（BGM + ボイス両方） |
+| `setSsgMixScale(ssgScale)` | SSGミックスレベル設定（1.0=等倍、0.71≈-3dB）。デフォルト実装は何もしない |
+| `getSsgMixScale()` | 現在のSSGスケール値（デフォルト1.0） |
 
 ---
 
@@ -153,10 +155,12 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 ボイス終了後に releaseSec かけて元の音量に復帰する。
 ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が減衰対象。
 
-### 音量制御
+### 音量バランス・制御
 
 | メソッド | 説明 |
 |---------|------|
+| `setSsgMixScale(ssgScale)` | SSG出力のリニアスケール設定。1.0=等倍、0.71≈-3dB（MUCOM88Vデフォルト）。IFmEngine にパススルー |
+| `getSsgMixScale()` | 現在のSSGスケール値 |
 | `setGlobalAttenuation(att)` | グローバル減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A: att*63/127でTL減衰。ADPCM-Bには影響しない |
 | `globalAttenuation()` | 現在の減衰値 |
 

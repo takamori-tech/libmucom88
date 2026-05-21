@@ -366,6 +366,16 @@ public:
         m_duckEnabled = (attTarget > 0);
     }
 
+    // ── FM/SSG音量バランス（IFmEngineパススルー）──────────
+    // ssgScale: SSG出力のリニアスケール（1.0=等倍、0.71≈-3dB）
+    // MUCOM88Vデフォルト: 0.71（-3dB）
+    void setSsgMixScale(float ssgScale) {
+        if (m_engine) m_engine->setSsgMixScale(ssgScale);
+    }
+    float getSsgMixScale() const {
+        return m_engine ? m_engine->getSsgMixScale() : 1.0f;
+    }
+
     // ── グローバル減衰（ダッキング用）────────────────────
     // att: FM TL加算値（0=通常、20≈-15dB）。SSGはatt/4で換算。
     // ADPCM-Aはatt*63/127でTL減衰。ADPCM-Bには影響しない。

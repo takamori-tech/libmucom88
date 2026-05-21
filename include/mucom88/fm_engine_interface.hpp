@@ -45,4 +45,10 @@ public:
     virtual void tickVoiceTimer(uint32_t frameCount) = 0;
     // BGM + ボイス両方のADPCM-Bを強制停止
     virtual void stopAdpcmB() = 0;
+
+    // FM/SSG音量バランス（ミックスレベル調整）
+    // ssgScale: SSG出力のリニアスケール（1.0=等倍、0.71≈-3dB、デフォルト）
+    // fmgen: SetVolumePSG(dB) で実装、ymfm: generateInterleaved内でスケーリング
+    virtual void setSsgMixScale(float /*ssgScale*/) {}
+    virtual float getSsgMixScale() const { return 1.0f; }
 };
