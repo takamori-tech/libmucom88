@@ -6,7 +6,7 @@ MUCOM88互換のMMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ラ
 ## 前提
 
 - C++17 以上
-- YM2608エミュレータ（fmgen または ymfm）を自前で用意すること
+- YM2608エミュレータ（fmgen）を自前で用意すること
 - libmucom88 自体はヘッダーオンリー（外部依存なし）
 
 ## プロジェクトへの追加
@@ -34,7 +34,7 @@ MmlEngine ── イベント列を再生、Timer-B駆動、YM2608レジスタ�
 IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
     │
     ▼
-[YM2608エミュレータ]  （fmgen, ymfm 等）
+[YM2608エミュレータ]  （fmgen 等）
 ```
 
 ## ヘッダー一覧
@@ -157,7 +157,7 @@ std::vector<uint8_t> pcmData(
     std::istreambuf_iterator<char>());
 
 if (pcmData.size() > 0x400) {
-    // fmgen/ymfm の ADPCM-B バッファにデータ部分をロード
+    // fmgen の ADPCM-B バッファにデータ部分をロード
     fmEngine.loadPcmDataToAdpcmB(
         pcmData.data() + 0x400, pcmData.size() - 0x400);
     // MmlEngine に PCM テーブル（マルチサンプル情報）をロード
@@ -414,7 +414,7 @@ UIスレッドからの状態取得（`chNoteOn()` 等）はアトミックで�
 
 ### チップクロック
 デフォルトは 7,987,200 Hz（PC-8801 NTSC標準）。
-ymfm を使う場合は 8,000,000 Hz が標準だが、
+
 `MmlEngine::init()` の第3引数で指定できる。
 SSGの音程計算に影響する（Issue #22）。
 

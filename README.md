@@ -6,7 +6,7 @@ MUCOM88互換 MMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ラ�
 
 ## 概要
 
-[MUCOM88](https://www.ancient.co.jp/~mucom88/)（古代祐三氏がNEC PC-8801向けに開発した音楽ドライバー）と互換のMMLパーサー＋シーケンサーを提供する。MMLテキストからYM2608のレジスタ書き込みを生成し、任意のYM2608エミュレータ（fmgen, ymfm等）をバックエンドとして使用できる。
+[MUCOM88](https://www.ancient.co.jp/~mucom88/)（古代祐三氏がNEC PC-8801向けに開発した音楽ドライバー）と互換のMMLパーサー＋シーケンサーを提供する。MMLテキストからYM2608のレジスタ書き込みを生成し、任意のYM2608エミュレータ（fmgen等）をバックエンドとして使用できる。
 
 BGM再生に加え、ADPCM-Bを使ったゲームボイス再生にも対応。BGM再生中にボイスを差し込む際のKトラック優先制御（BGMのADPCM-Bを自動抑制）を内蔵。
 
@@ -25,7 +25,7 @@ MmlEngine ── シーケンス再生、Timer-B駆動、レジスタ書き込�
 IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
     │
     ▼
-[YM2608エミュレータ]  （fmgen, ymfm 等）
+[YM2608エミュレータ]  （fmgen 等）
 ```
 
 ## クイックスタート

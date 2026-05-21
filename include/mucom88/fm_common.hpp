@@ -16,7 +16,7 @@
 // FmPatch: MUCOM88形式の音色定義
 //
 // MUCOM88のパラメーター順: AR,DR,SR,RR,SL,TL,KS,ML,DT
-// ymfmへの書き込み順:      DT,ML,TL,KS,AR,DR,SR,SL,RR
+// fmgenへの書き込み順:      DT,ML,TL,KS,AR,DR,SR,SL,RR
 // =============================================================================
 // 音色の出典情報
 enum class PatchSource : uint8_t {
@@ -96,7 +96,7 @@ inline uint16_t noteToFnum(int noteNum, int& blockOut)
 // SSG トーンピリオド計算
 // YM2608 SSG: freq = master_clock / (64 * TP)
 //   → TP = chip_clock / (64 * freq)
-// chipClock: YM2608マスタークロック（7987200=NTSC, 8000000=ymfm標準）
+// chipClock: YM2608マスタークロック（7987200=NTSC標準）
 // Issue #22: クロック定数をハードコードせず引数で受け取る
 // =============================================================================
 inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)

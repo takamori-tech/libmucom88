@@ -397,7 +397,7 @@ public:
             }
         }
         // 即時反映: ADPCM-A 全体音量TL を減衰
-        // reg 0x11: 6bit TL（0x3F=最大、0x00=無音、ymfm内部で^0x3F反転）
+        // reg 0x11: 6bit TL（0x3F=最大、0x00=無音、チップ内部で^0x3F反転）
         // att=0→元のTLをそのまま、att=127→TLを0にする
         int rhythmAtt = m_globalAtt * 63 / 127;
         int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
@@ -2209,13 +2209,13 @@ private:
     //   0x10: キーオン/Dump制御
     //         bit7=0: キーオン（bit0-5の楽器を発音開始）
     //         bit7=1: Dump（bit0-5の楽器を強制停止）
-    //   0x11: 全体音量（TL: 6bit、0x3F=最大、0x00=無音 ※ymfm内部で^0x3Fされる）
+    //   0x11: 全体音量（TL: 6bit、0x3F=最大、0x00=無音 ※チップ内部で^0x3Fされる）
     //   0x18-0x1D: 各楽器パン&音量（bit7=L, bit6=R, bit4-0=個別音量）
     //
     // 楽器ビット: bit0=BD, bit1=SD, bit2=CY, bit3=HH, bit4=TM, bit5=RS
     //
     // NOTE: ADPCM-A は YM2608 内蔵ROMのドラムサンプルを使用。
-    //       ROMデータが未ロード（ymfm_external_read が0を返す）の場合は無音。
+    //       ROMデータが未ロード（ADPCM-A ROMデータが未ロード）の場合は無音。
     // =====================================================================
     void rhythmKeyOn()
     {

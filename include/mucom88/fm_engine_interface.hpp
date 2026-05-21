@@ -2,7 +2,7 @@
 // fm_engine_interface.hpp
 // FM音源エンジン共通インターフェース
 //
-// fmgen版 (FmEngineFmgen) と ymfm版 (FmEngine) の両方がこの
+// fmgen版 (FmEngineFmgen) 等がこの
 // インターフェースを実装する。mml_engine やゲーム本体は
 // IFmEngine* を通じて操作し、実装を切り替え可能にする。
 // =============================================================================
@@ -48,7 +48,7 @@ public:
 
     // FM/SSG音量バランス（ミックスレベル調整）
     // ssgScale: SSG出力のリニアスケール（1.0=等倍、0.71≈-3dB、デフォルト）
-    // fmgen: SetVolumePSG(dB) で実装、ymfm: generateInterleaved内でスケーリング
+    // fmgen: SetVolumePSG(dB) で実装
     virtual void setSsgMixScale(float /*ssgScale*/) {}
     virtual float getSsgMixScale() const { return 1.0f; }
 };

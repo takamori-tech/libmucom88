@@ -49,7 +49,7 @@
 //     AR,DR,SR,RR,SL,TL,KS,ML,DT  ; op3
 //     AR,DR,SR,RR,SL,TL,KS,ML,DT  ; op4
 //   ※パラメーター順はMUCOM88準拠（AR,DR,SR,RR,SL,TL,KS,ML,DT）
-//   ※ymfmへの書き込み順（DT,ML,TL,KS,AR,DR,SR,SL,RR）とは異なるので変換が必要
+//   ※レジスタへの書き込み順（DT,ML,TL,KS,AR,DR,SR,SL,RR）とは異なるので変換が必要
 //
 // ■ マクロ
 //   #*(番号){内容}  : マクロ定義
