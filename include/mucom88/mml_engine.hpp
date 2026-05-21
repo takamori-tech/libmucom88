@@ -289,6 +289,11 @@ public:
     }
     void playVoice(int voiceId) {
         if (!m_engine) return;
+        // BGMのKトラック（ADPCM-B）を停止してからボイス再生を開始
+        if (m_channels[10].noteOn) {
+            adpcmbKeyOff();
+            m_channels[10].noteOn = false;
+        }
         m_voiceOverride = true;
         m_engine->playVoice(voiceId);
     }

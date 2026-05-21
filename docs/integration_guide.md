@@ -205,7 +205,23 @@ void audioCallback(void* userdata, uint8_t* stream, int len) {
 ## ボイス再生（ADPCM-B）
 
 ゲーム中のボイスコール（"Destroy them all!" 等）をBGM再生中に差し込む。
-MmlEngineのボイス再生APIを使うと、BGMのKトラック（ADPCM-B）を自動的に抑制する。
+MmlEngineのボイス再生APIを使うと、BGMのKトラック（ADPCM-B）との排他制御が自動的に行われる。
+
+### 動作の流れ
+
+1. `playVoice(id)` を呼ぶ
+   - BGMのKトラックが発音中であれば KEY_OFF で停止
+   - `m_voiceOverride = true` でKトラックのイベント処理を抑制
+   - IFmEngine経由でボイス再生を開始
+2. ボイス再生中
+   - BGMのKトラック（ch 10）の全イベント処理がスキップされる
+   - FM/SSG/リズム等の他チャンネルは通常通り再生継続
+3. ボイス再生終了（`tickVoiceTimer()` で検出）
+   - `m_voiceOverride = false` に戻る
+   - 次の advance() tick からKトラックのイベント処理が自動再開
+   - BGMの次のADPCM-Bノートで adpcmbKeyOn() が呼ばれ、パン・ボリューム・ピッチが全て再設定される
+
+### 使い方
 
 ```cpp
 // ボイステーブルのロード（起動時に1回）
@@ -214,15 +230,12 @@ fmEngine.loadVoiceTable("voice_table.bin");
 // ボイス再生（BGM再生中でも安全に呼べる）
 engine.playVoice(0);   // voiceId=0 のボイスを再生
 
-// ボイス再生中はBGMのKトラックイベント処理が自動的に抑制される
-// （m_voiceOverrideフラグによるKトラック優先制御）
-
 // ボイス終了検出
 if (engine.isVoicePlaying()) {
     // まだ再生中
 }
 
-// 明示的に停止
+// 明示的に停止（ボイスを途中で打ち切る場合）
 engine.stopVoice();
 ```
 
