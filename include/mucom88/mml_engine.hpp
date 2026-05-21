@@ -319,7 +319,6 @@ public:
     }
     void tickVoiceTimer(uint32_t frameCount) {
         if (!m_engine) return;
-        bool wasPlaying = m_engine->isVoicePlaying();
         m_engine->tickVoiceTimer(frameCount);
         if (m_voiceOverride && !m_engine->isVoicePlaying()) {
             m_voiceOverride = false;
