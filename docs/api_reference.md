@@ -143,6 +143,16 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 ボイス再生中は `m_voiceOverride` フラグによりBGMのKトラック（ch 10）の
 イベント処理が抑制される。ボイス終了時に自動で解除される。
 
+### ダッキング（ボイス再生中のBGM自動減衰）
+
+| メソッド | 説明 |
+|---------|------|
+| `setDucking(attTarget, releaseSec=0.15)` | ダッキング設定。attTarget=FM TL加算値（20≈-15dB）、releaseSec=復帰時間。attTarget=0で無効 |
+
+`setDucking()` を設定すると、`playVoice()` 呼び出し時にFM/SSGが即座に減衰し、
+ボイス終了後に releaseSec かけて元の音量に復帰する。
+ADPCM-A（リズム）とADPCM-B（ボイス）には影響しない。
+
 ### 音量制御
 
 | メソッド | 説明 |

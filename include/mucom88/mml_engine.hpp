@@ -296,26 +296,74 @@ public:
         }
         m_voiceOverride = true;
         m_engine->playVoice(voiceId);
+        // ダッキング開始: FM/SSGを即座に減衰
+        if (m_duckEnabled) {
+            m_duckActive = true;
+            m_duckReleasing = false;
+            setGlobalAttenuation(m_duckAttTarget);
+        }
     }
     void stopVoice() {
         if (!m_engine) return;
         m_engine->stopVoice();
         m_voiceOverride = false;
+        // ダッキング即時解除
+        if (m_duckActive) {
+            m_duckActive = false;
+            m_duckReleasing = false;
+            setGlobalAttenuation(0);
+        }
     }
     bool isVoicePlaying() const {
         return m_engine ? m_engine->isVoicePlaying() : false;
     }
     void tickVoiceTimer(uint32_t frameCount) {
         if (!m_engine) return;
+        bool wasPlaying = m_engine->isVoicePlaying();
         m_engine->tickVoiceTimer(frameCount);
         if (m_voiceOverride && !m_engine->isVoicePlaying()) {
             m_voiceOverride = false;
+            // ダッキングリリース開始
+            if (m_duckActive) {
+                m_duckReleasing = true;
+                m_duckReleaseSamplesLeft = m_duckReleaseSamples;
+            }
+        }
+        // ダッキングリリース処理（徐々に減衰解除）
+        if (m_duckReleasing) {
+            if (frameCount >= m_duckReleaseSamplesLeft) {
+                m_duckReleaseSamplesLeft = 0;
+                m_duckReleasing = false;
+                m_duckActive = false;
+                setGlobalAttenuation(0);
+            } else {
+                m_duckReleaseSamplesLeft -= frameCount;
+                float t = (float)m_duckReleaseSamplesLeft / m_duckReleaseSamples;
+                int att = (int)(m_duckAttTarget * t);
+                setGlobalAttenuation(att);
+            }
         }
     }
     void stopAdpcmB() {
         if (!m_engine) return;
         m_engine->stopAdpcmB();
         m_voiceOverride = false;
+        if (m_duckActive) {
+            m_duckActive = false;
+            m_duckReleasing = false;
+            setGlobalAttenuation(0);
+        }
+    }
+
+    // ── ダッキング設定 ───────────────────────────────────
+    // ボイス再生中にFM/SSGの音量を自動減衰する。
+    // attTarget: FM TL加算値（0=無効、20≈-15dB）。SSGはatt/4で換算。
+    // releaseSec: ボイス終了後の減衰解除時間（秒）。0で即時復帰。
+    // ADPCM-A/Bには影響しない（レジスタが別系統のため）。
+    void setDucking(int attTarget, float releaseSec = 0.15f) {
+        m_duckAttTarget = attTarget;
+        m_duckReleaseSamples = (uint32_t)(releaseSec * m_sampleRate);
+        m_duckEnabled = (attTarget > 0);
     }
 
     // ── グローバル減衰（ダッキング用）────────────────────
@@ -1027,6 +1075,13 @@ private:
     std::array<uint8_t, 6> m_rhythmIL = {0xDF,0xDF,0xDF,0xDF,0xDF,0xDF}; // L+R + level 31
     int         m_globalAtt  = 0;     // グローバル減衰（FM TL加算値、0=通常）
     bool        m_voiceOverride = false; // ゲームボイス再生中: Kトラック(ch10)イベント抑制
+    // ダッキング（ボイス再生中のFM/SSG自動減衰）
+    bool        m_duckEnabled = false;   // ダッキング機能ON/OFF
+    bool        m_duckActive  = false;   // 現在ダッキング中
+    bool        m_duckReleasing = false; // リリース中（徐々に復帰）
+    int         m_duckAttTarget = 20;    // 減衰量（FM TL加算値、20≈-15dB）
+    uint32_t    m_duckReleaseSamples = 0;     // リリース時間（サンプル数）
+    uint32_t    m_duckReleaseSamplesLeft = 0;  // リリース残りサンプル数
     int         m_pcmVolMode = 0;     // PVMODE: 0=IX+6のみ使用, 1=IX+6+IX+7
     int         m_pcmAddVol  = 0;     // ADPCM-B追加音量（PVMODE=1時のIX+7、V1→v設定）
 

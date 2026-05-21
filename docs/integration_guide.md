@@ -239,29 +239,40 @@ if (engine.isVoicePlaying()) {
 engine.stopVoice();
 ```
 
-### ダッキング（BGM減衰）
+### ダッキング（BGM自動減衰）
 
-ボイス再生中にBGM音量を下げて聞き取りやすくする:
+`setDucking()` を設定すると、ボイス再生中に FM/SSG の音量を自動的に下げる。
+ボイス終了後は指定した時間をかけて徐々に復帰する。
 
 ```cpp
-// MmlEngine のグローバル減衰を使う方法
-// att: FM TL加算値（0=通常、20≈-15dB）、SSGはatt/4で換算
-engine.setGlobalAttenuation(20);  // ボイス再生開始時
+// ダッキング設定（初期化時に1回）
+// attTarget: FM TL加算値（20≈-15dB）。SSGはatt/4で換算。
+// releaseSec: ボイス終了後の復帰時間（秒）
+engine.setDucking(20, 0.15f);
 
-// ボイス終了後に復元
-engine.setGlobalAttenuation(0);
+// あとは playVoice() を呼ぶだけで自動的にダッキングが動作する
+engine.playVoice(0);
+// → FM/SSG が即座に -15dB 減衰
+// → ボイス終了後、0.15秒かけて元の音量に復帰
 ```
 
-または出力バッファに直接ゲインを掛ける方法（より柔軟）:
+レジスタレベルで FM の TL（Total Level）と SSG の振幅を操作するため、
+ADPCM-A（リズム）と ADPCM-B（ボイス）の音量には影響しない。
+ボイスの聞き取りやすさを確保しつつ、BGM のメロディ・和音だけが減衰する。
+
+ダッキングを無効にするには `setDucking(0)` を呼ぶ。
+
+### 手動ダッキング
+
+自動ダッキングを使わず、出力バッファに直接ゲインを掛ける方法もある:
 
 ```cpp
-float duckGain = 1.0f;
-float duckTarget = 0.3f;   // ボイス中はBGMを30%に
-
-// render後にゲイン適用
+float duckGain = engine.isVoicePlaying() ? 0.3f : 1.0f;
 for (uint32_t i = 0; i < frameCount * 2; i++)
     buf[i] = (int16_t)(buf[i] * duckGain);
 ```
+
+この方法はボイスを含む全出力に影響する点に注意。
 
 ## チャンネル状態の取得（UI表示用）
 
