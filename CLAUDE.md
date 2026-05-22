@@ -10,7 +10,7 @@ include/mucom88/
   fm_common.hpp              FM音色定義（FmPatch/Mucom88Patch）、周波数変換、voice.datパーサー
   fm_engine_interface.hpp    IFmEngine 抽象インターフェース（YM2608エミュレータの共通API）
   mml_parser.hpp             MMLパーサー（MUCOM88形式、132曲検証済み）
-  mml_engine.hpp             MMLシーケンサー（Timer-B駆動、11ch、ボイス再生、ダッキング）
+  mml_engine.hpp             MMLシーケンサー（Timer-B駆動、11ch、ボイス再生、ダッキング、マスターボリューム、フェード）
 docs/
   api_reference.md           全クラス・メソッドの詳細
   integration_guide.md       ゲームプログラム組み込みガイド
@@ -26,7 +26,8 @@ MmlParser ── パース、マクロ展開、イベント列生成
     │
     ▼
 MmlEngine ── シーケンス再生、Timer-B駆動、レジスタ書き込み
-    │         ボイス再生時のKトラック優先制御、自動ダッキング
+    │         ボイス再生、ダッキング、マスターボリューム、フェード
+    │         チャンネルハイジャック（SE割り込み）
     ▼
 IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
     │
