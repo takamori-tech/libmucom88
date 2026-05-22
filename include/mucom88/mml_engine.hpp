@@ -1670,8 +1670,8 @@ private:
                 if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
                 if (isSSG(ch)) {
                     int idx = ev.value & 0x0F;
-                    if (idx < SSGDAT_COUNT) {
-                        const auto& preset = SSGDAT[idx];
+                    if (idx < 16) {
+                        const auto& preset = kSsgPresets[idx];
                         st.ssgSoftEnv = true;
                         st.ssgEnvAL = preset.env[0]; st.ssgEnvAR = preset.env[1];
                         st.ssgEnvDR = preset.env[2]; st.ssgEnvSL = preset.env[3];
@@ -2102,17 +2102,6 @@ private:
         m_engine->writeReg(0, 0x28, (uint8_t)(0x00 | chKey));
     }
 
-    // MUCOM88 FMVDAT テーブル全20エントリ（Z80 music.asm:2700）
-    // STV1: index = TOTALV(初期値4) + vol → FMVDAT[index]
-    // FS2(リバーブ): index = (vol + R) >> 1 → STV2 → FMVDAT[index]（TOTALV加算なし）
-    static constexpr int FMVDAT[20] = {
-        0x36, 0x33, 0x30, 0x2D,  // FMVDAT[0-3]（STV1では通常使わない、FS2で使用）
-        0x2A, 0x28, 0x25, 0x22,  // FMVDAT[4-7]  = vol 0-3
-        0x20, 0x1D, 0x1A, 0x18,  // FMVDAT[8-11] = vol 4-7
-        0x15, 0x12, 0x10, 0x0D,  // FMVDAT[12-15] = vol 8-11
-        0x0A, 0x08, 0x05, 0x02   // FMVDAT[16-19] = vol 12-15
-    };
-
     static constexpr int carrierOffsets[8][4] = {
         {12, -1, -1, -1},  // AL0: op4
         {12, -1, -1, -1},  // AL1: op4
@@ -2141,21 +2130,14 @@ private:
         }
     }
 
-    // MUCOM88 STV1経由: FMVDAT[TOTALV + vol]（通常の音量設定）
-    // TOTALV初期値=4 なので vol 0-15 → FMVDAT[4]-FMVDAT[19]
     void fmSetVolume(int fi, int vol)
     {
-        int idx = std::clamp(vol + 4, 0, 19);
-        fmWriteCarrierTL(fi, FMVDAT[idx]);
+        fmWriteCarrierTL(fi, fmvdatLookup(vol));
     }
 
-    // MUCOM88 FS2→STV2経由: FMVDAT[(IX+6 + IX+17) >> 1]（リバーブ用）
-    // Z80 IX+6にはコンパイラSETVOLが+4を加算済み（FM用: user_vol + TV_OFS + 4）
-    // MmlEngineのvolは+4を含まないため、ここで加算する
     void fmSetReverbVolume(int fi, int vol, int reverbValue)
     {
-        int idx = std::clamp((vol + 4 + reverbValue) >> 1, 0, 19);
-        fmWriteCarrierTL(fi, FMVDAT[idx]);
+        fmWriteCarrierTL(fi, fmReverbTL(vol, reverbValue));
     }
 
     // =====================================================================
@@ -2254,47 +2236,13 @@ private:
         }
     }
 
-    // Z80 SSGDAT テーブル（music.asm:2162 + ssgdat.asm）
-    // SSG @N プリセット: E(AL,AR,DR,SL,SR,RR), P(ミキサー), M(LFO: delay,rate,depth,count)
-    // LFOパラメータはZ80 OTOSSG→LFOON経由で設定される
-    static constexpr int SSGDAT_COUNT = 16;
-    struct SsgPreset {
-        int env[6];     // AL, AR, DR, SL, SR, RR
-        int mixerP;     // P値: 1=トーン, 2=ノイズ, 3=トーン+ノイズ
-        bool hasLfo;    // LFOパラメータあり
-        int lfoDelay;   // M第1パラメータ: ノートオン後の遅延tick数
-        int lfoRate;    // M第2パラメータ: 何tickで1ステップ進むか
-        int lfoDepth;   // M第3パラメータ: ピッチ変化量（符号あり）
-        int lfoCount;   // M第4パラメータ: 反転までのステップ数（負=無限）
-    };
-    static constexpr SsgPreset SSGDAT[SSGDAT_COUNT] = {
-        {{255,255,255,255,  0,255}, 1, false, 0,0,0,0},       // @0: 持続
-        {{255,255,255,200,  0, 10}, 1, false, 0,0,0,0},       // @1: 標準サステイン
-        {{255,255,255,200,  1, 10}, 1, false, 0,0,0,0},       // @2: サステインレート1
-        {{255,255,255,190,  0, 10}, 1, true,  16,1,25,4},     // @3: LFO付き
-        {{255,255,255,190,  1, 10}, 1, true,  16,1,25,4},     // @4: LFO付き(SR=1)
-        {{255,255,255,170,  0, 10}, 1, false, 0,0,0,0},       // @5: 速いリリース
-        {{ 40, 70, 14,190,  0, 15}, 1, true,  16,1,24,5},     // @6: スローアタック+LFO
-        {{120, 30,255,255,  0, 10}, 1, true,  16,1,25,4},     // @7: ベル風+LFO
-        {{255,255,255,225,  8, 15}, 1, false, 0,0,0,0},       // @8: SR=8
-        {{255,255,255,  1,255,255}, 2, false, 0,0,0,0},       // @9: ノイズ
-        {{255,255,255,200,  8,255}, 2, false, 0,0,0,0},       // @10: ノイズ(SR=8)
-        {{255,255,255,220, 20,  8}, 1, true,  1,1,300,-1},    // @11: 減衰ビブラート
-        {{255,255,255,255,  0, 10}, 1, true,  1,1,-400,4},    // @12: ピッチダウン
-        {{255,255,255,255,  0, 10}, 1, true,  1,1,80,-1},     // @13: ゆるいビブラート
-        {{120, 80,255,255,  0,255}, 1, true,  1,1,-250,1},    // @14: 揺れ
-        {{255,255,255,220,  0,255}, 1, true,  1,1,3000,-1},   // @15: 激しいビブラート
-    };
-
-    // Z80 OTOSSG → OTOCAL → ENVPST: SSGDATプリセットをソフトウェアエンベロープに適用
-    // + LFO(M)パラメータ、ミキサーモード(P)も適用
     void ssgApplyPreset(int si, int presetNo)
     {
         int mmlCh = si + 3;
         int idx = presetNo & 0x0F;
-        if (idx >= SSGDAT_COUNT) idx = 0;
+        if (idx >= 16) idx = 0;
         auto& st = m_channels[mmlCh];
-        const auto& preset = SSGDAT[idx];
+        const auto& preset = kSsgPresets[idx];
 
         // エンベロープ
         st.ssgSoftEnv = true;
