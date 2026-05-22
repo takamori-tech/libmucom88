@@ -325,7 +325,6 @@ public:
             int off  = fmOffset(fi);
             m_engine->writeReg(port, 0xB4 + off, (uint8_t)panToReg(st.pan));
         } else if (isSSG(ch)) {
-            int si = toSSGIndex(ch);
             m_engine->writeReg(0, 0x07, m_ssgMixer);
             if (st.ssgSoftEnv) {
                 st.ssgEnvValue = st.ssgEnvAL;
