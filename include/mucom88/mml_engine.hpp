@@ -119,6 +119,19 @@ public:
     // パーサーのwholeTick値を渡す。テンポ計算のPPQに影響。
     void setWholeTick(int wt) { m_wholeTick = (wt > 0) ? wt : 128; }
 
+    // ── パース結果の一括適用 ──────────────────────────
+    // MucFileから音色・全音符クロック・全チャンネルイベントをまとめて設定。
+    // init() 後、play() 前に呼ぶ。
+    void loadFromParseResult(const MmlParser::MucFile& muc)
+    {
+        for (const auto& [no, patch] : muc.patches)
+            setPatch(no, patch);
+        setWholeTick(muc.wholeTick);
+        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++)
+            if (!muc.channelEvents[ch].empty())
+                setEvents(ch, muc.channelEvents[ch]);
+    }
+
     // 曲全体のループ終端tickを外部から設定（パート分離比較用）
     // play()内のcommonEndTick計算を上書きする
     void setCommonEndTick(uint32_t tick) { m_overrideEndTick = tick; }
@@ -2354,10 +2367,31 @@ public:
         return loadPcmData(buf.data(), sz);
     }
 
+    // ── mucompcm.bin 統合ロード ──────────────────────────
+    // PCMアドレステーブル（自身で使用）とADPCM-Bオーディオデータ（IFmEngine経由）
+    // をまとめてロード。利用側がヘッダー分割を意識する必要がない。
+    bool loadPcmBinary(const uint8_t* data, size_t size)
+    {
+        static constexpr size_t HEADER_SIZE = 0x400;
+        if (!data || size <= HEADER_SIZE) return false;
+        loadPcmData(data, size);
+        if (m_engine)
+            m_engine->loadPcmDataToAdpcmB(data + HEADER_SIZE, size - HEADER_SIZE);
+        return true;
+    }
+
+    bool loadPcmBinaryFile(const std::string& path)
+    {
+        std::ifstream ifs(path, std::ios::binary | std::ios::ate);
+        if (!ifs) return false;
+        size_t sz = (size_t)ifs.tellg();
+        ifs.seekg(0);
+        std::vector<uint8_t> buf(sz);
+        ifs.read((char*)buf.data(), sz);
+        return loadPcmBinary(buf.data(), sz);
+    }
+
 private:
-    // ADPCM-B PCMデータのfmgenへのロードは呼び出し側で直接行う:
-    //   fmgenEngine.loadPcmDataToAdpcmB(data + 0x400, size - 0x400);
-    // loadPcmData() はPCMADRテーブルのみを解析する
 
     // Z80 PCMNMBテーブル（music.asm:3012-3015）
     // DW 49BAH+200 は Z80アセンブラで 0x49BA + 200(10進) = 0x49BA + 0xC8

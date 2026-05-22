@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include "fm_common.hpp"
 
 class IFmEngine
 {
@@ -46,9 +47,67 @@ public:
     // BGM + ボイス両方のADPCM-Bを強制停止
     virtual void stopAdpcmB() = 0;
 
+    // ADPCM-B PCMデータロード（mucompcm.binのデータ部分）
+    virtual bool loadPcmDataToAdpcmB(const uint8_t* /*data*/, size_t /*size*/) { return false; }
+
     // FM/SSG音量バランス（ミックスレベル調整）
     // ssgScale: SSG出力のリニアスケール（1.0=等倍、0.71≈-3dB、デフォルト）
     // fmgen: SetVolumePSG(dB) で実装
     virtual void setSsgMixScale(float /*ssgScale*/) {}
     virtual float getSsgMixScale() const { return 1.0f; }
+
+    // ── FM音色適用（MUCOM88 STENV互換）──────────────────
+    // fmIndex: FM index (0-5)。port/offsetは内部で計算。
+    // KEY_OFF → SL/RR=0x0F → 全オペレータパラメータ → FB/ALG → PAN(L+R)
+    virtual void applyPatch(int fmIndex, const FmPatch& patch)
+    {
+        int port = (fmIndex < 3) ? 0 : 1;
+        int off  = fmIndex % 3;
+        // KEY_OFF
+        uint8_t chKey = (fmIndex < 3) ? (uint8_t)fmIndex : (uint8_t)(fmIndex - 3 + 4);
+        writeReg(0, 0x28, (uint8_t)(0x00 | chKey));
+        // SL/RR = 0x0F（最速リリース）
+        for (int oi = 0; oi < 4; oi++)
+            writeReg(port, 0x80 + kFmSlotOffset[oi] + off, 0x0F);
+        // 全オペレータパラメータ
+        for (int oi = 0; oi < 4; oi++) {
+            int base = kFmSlotOffset[oi] + off;
+            const auto& op = patch.op[oi];
+            writeReg(port, 0x30 + base, (uint8_t)(((op.dt & 0x07) << 4) | (op.ml & 0x0F)));
+            writeReg(port, 0x40 + base, (uint8_t)(op.tl & 0x7F));
+            writeReg(port, 0x50 + base, (uint8_t)(((op.ks & 0x03) << 6) | (op.ar & 0x1F)));
+            writeReg(port, 0x60 + base, (uint8_t)(((op.ame & 1) << 7) | (op.dr & 0x1F)));
+            writeReg(port, 0x70 + base, (uint8_t)(op.sr & 0x1F));
+            writeReg(port, 0x80 + base, (uint8_t)(((op.sl & 0x0F) << 4) | (op.rr & 0x0F)));
+        }
+        // FB/ALG
+        writeReg(port, 0xB0 + off, (uint8_t)(((patch.fb & 0x07) << 3) | (patch.al & 0x07)));
+        // PAN: L+R
+        writeReg(port, 0xB4 + off, 0xC0);
+    }
+
+    // ── FM周波数設定（F-Number + Block）──────────────────
+    // fmIndex: FM index (0-5)。noteNum: MIDIノート番号。
+    // noteToFnum()でF-Number/Block計算、0xA4→0xA0の順でラッチ。
+    virtual void setFrequency(int fmIndex, int noteNum)
+    {
+        int port = (fmIndex < 3) ? 0 : 1;
+        int off  = fmIndex % 3;
+        int block = 4;
+        uint16_t fnum = noteToFnum(noteNum, block);
+        writeReg(port, 0xA4 + off, (uint8_t)(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
+        writeReg(port, 0xA0 + off, (uint8_t)(fnum & 0xFF));
+    }
+
+    // ── FM KEY ON/OFF ────────────────────────────────────
+    virtual void fmKeyOn(int fmIndex)
+    {
+        uint8_t chKey = (fmIndex < 3) ? (uint8_t)fmIndex : (uint8_t)(fmIndex - 3 + 4);
+        writeReg(0, 0x28, (uint8_t)(0xF0 | chKey));
+    }
+    virtual void fmKeyOff(int fmIndex)
+    {
+        uint8_t chKey = (fmIndex < 3) ? (uint8_t)fmIndex : (uint8_t)(fmIndex - 3 + 4);
+        writeReg(0, 0x28, (uint8_t)(0x00 | chKey));
+    }
 };
