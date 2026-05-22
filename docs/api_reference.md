@@ -211,7 +211,15 @@ ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が�
 | `setGlobalAttenuation(att)` | ダッキング減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A/B: スケーリング。マスターボリューム・フェードと独立に加算される |
 | `globalAttenuation()` | 合算減衰値（masterAtt + fadeAtt + duckAtt） |
 
-**3層減衰アーキテクチャ:** マスターボリューム、フェード、ダッキングの3成分がFM TL単位で独立に管理され、合算値が各チャンネルに適用される。
+**3層減衰アーキテクチャ:** マスターボリューム、フェード、ダッキングの3成分がFM TL単位（0=最大、127=無音）で独立に管理され、合算値 `globalAtt = clamp(masterAtt + fadeAtt + duckAtt, 0, 127)` が各チャンネルに適用される。
+
+チャンネル種別ごとのスケーリング:
+- **FM**: キャリアTLに +globalAtt（TLは0=最大、127=無音）
+- **SSG**: 振幅から -globalAtt/4（振幅は0-15）
+- **ADPCM-A**: TLから -globalAtt*63/127（TLは0-63）
+- **ADPCM-B (Kトラック)**: ボリュームから -globalAtt*2（レジスタは0=無音、255=最大）
+
+ループリスタート時（`globalLoopRestart()` / `perChannelRestart()`）にもADPCM-Bボリュームが明示的に復元され、フェード中のループでも減衰が途切れない。
 
 ### 状態取得
 
