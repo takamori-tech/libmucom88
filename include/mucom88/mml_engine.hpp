@@ -233,7 +233,7 @@ public:
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             auto& st = m_channels[ch];
             if (st.events.empty()) continue;
-            if (isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Playing) continue;
+            if (isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) != VoiceDuckState::Idle) continue;
             processEvents(ch, m_globalTick);  // m_globalTick = 0
         }
 
@@ -612,7 +612,7 @@ public:
                         continue;
                     }
                     // ボイス再生中はKトラック(ch10)のイベント処理を抑制
-                    if (!(isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Playing)) {
+                    if (!(isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) != VoiceDuckState::Idle)) {
                         if (st.hijacked) {
                             advanceEventsSilent(ch, m_globalTick);
                         } else {
