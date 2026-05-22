@@ -121,7 +121,7 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 | `setEvents(ch, events)` | チャンネルにイベント列を設定（0-10） |
 | `setPatch(patchNo, patch)` | 音色を登録（0-255） |
 | `setWholeTick(wt)` | 全音符クロック数を設定 |
-| `setLoop(loop)` | ループ ON/OFF |
+| `setLoop(loop)` | ループ ON/OFF（デフォルト: true） |
 | `setCommonEndTick(tick)` | ループ終端tickを外部指定（テスト用） |
 | `loadFromParseResult(muc)` | MucFileから音色・全音符クロック・全チャンネルイベントを一括設定 |
 | `loadPcmBinary(data, size)` | mucompcm.binを統合ロード（PCMテーブル + ADPCM-Bデータを内部分割） |
@@ -162,6 +162,7 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 `setDucking()` を設定すると、`playVoice()` 呼び出し時にFM/SSGが即座に減衰し、
 ボイス終了後に releaseSec かけて元の音量に復帰する。
 ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が減衰対象。
+デフォルト: **無効**（attTarget=0）。`play()` / `stop()` でリセットされる。
 
 ### チャンネルハイジャック（効果音割り込み用）
 
@@ -190,6 +191,7 @@ ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が�
 | `getMasterVolume()` | 現在のマスターボリューム（0.0-1.0） |
 
 マスターボリュームはBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）に加え、`playVoice()` のボイス再生にも適用される。
+デフォルト値: **1.0**（最大音量）。`play()` / `stop()` でリセットされない（ゲーム設定として永続）。
 
 ### フェードアウト/イン
 
@@ -200,7 +202,7 @@ ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が�
 | `resetFade()` | フェードを即座にキャンセルしマスターボリュームに復帰 |
 | `isFading()` | フェード進行中か |
 
-フェードはサンプル単位で進行（テンポ非依存）。play()/stop()でリセットされる。
+フェードはサンプル単位で進行（テンポ非依存）。デフォルト: **フェードなし**（fadeAtt=0）。`play()` / `stop()` でリセットされる。
 
 ### 音量バランス・制御
 
