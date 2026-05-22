@@ -127,9 +127,14 @@ public:
         for (const auto& [no, patch] : muc.patches)
             setPatch(no, patch);
         setWholeTick(muc.wholeTick);
-        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++)
+        bool hasLoop = false;
+        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             if (!muc.channelEvents[ch].empty())
                 setEvents(ch, muc.channelEvents[ch]);
+            for (const auto& ev : muc.channelEvents[ch])
+                if (ev.type == MmlEventType::LOOP_POINT) { hasLoop = true; break; }
+        }
+        m_loop = hasLoop;
     }
 
     // 曲全体のループ終端tickを外部から設定（パート分離比較用）
@@ -1215,7 +1220,7 @@ private:
     uint32_t    m_sampleRate;
     uint32_t    m_chipClock;  // YM2608マスタークロック（Issue #22）
     bool        m_playing = false;
-    bool        m_loop    = true;
+    bool        m_loop    = false;
     // グローバル同期クロック（MUCOM88 INT3割り込み相当）
     uint32_t    m_globalTick        = 0;
     uint32_t    m_globalSampleAccum = 0;

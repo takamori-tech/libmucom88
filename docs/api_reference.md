@@ -121,7 +121,7 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 | `setEvents(ch, events)` | チャンネルにイベント列を設定（0-10） |
 | `setPatch(patchNo, patch)` | 音色を登録（0-255） |
 | `setWholeTick(wt)` | 全音符クロック数を設定 |
-| `setLoop(loop)` | ループ ON/OFF（デフォルト: true） |
+| `setLoop(loop)` | ループ ON/OFF（デフォルト: false。`loadFromParseResult()` でLコマンドがあれば自動的にtrueに設定される） |
 | `setCommonEndTick(tick)` | ループ終端tickを外部指定（テスト用） |
 | `loadFromParseResult(muc)` | MucFileから音色・全音符クロック・全チャンネルイベントを一括設定 |
 | `loadPcmBinary(data, size)` | mucompcm.binを統合ロード（PCMテーブル + ADPCM-Bデータを内部分割） |
