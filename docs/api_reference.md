@@ -168,14 +168,36 @@ ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が�
 - 復帰時: FM音色・TL・PAN、SSGミキサーを現在のBGM状態に復元
 - 対象: FM ch1-6 (A-C, H-J)、SSG ch1-3 (D-F)。Rhythm (G)、ADPCM-B (K) はハイジャック対象外
 
+### マスターボリューム
+
+| メソッド | 説明 |
+|---------|------|
+| `setMasterVolume(vol)` | マスターボリューム設定。0.0=無音、1.0=最大。ダッキング・フェードとは独立。play()/stop()でリセットされない |
+| `getMasterVolume()` | 現在のマスターボリューム（0.0-1.0） |
+
+マスターボリュームはBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）に加え、`playVoice()` のボイス再生にも適用される。
+
+### フェードアウト/イン
+
+| メソッド | 説明 |
+|---------|------|
+| `fadeOut(seconds)` | 指定秒数で無音までフェードアウト。seconds=0で即時無音 |
+| `fadeIn(seconds)` | 指定秒数でマスターボリュームまでフェードイン。seconds=0で即時復帰 |
+| `resetFade()` | フェードを即座にキャンセルしマスターボリュームに復帰 |
+| `isFading()` | フェード進行中か |
+
+フェードはサンプル単位で進行（テンポ非依存）。play()/stop()でリセットされる。
+
 ### 音量バランス・制御
 
 | メソッド | 説明 |
 |---------|------|
 | `setSsgMixScale(ssgScale)` | SSG出力のリニアスケール設定。1.0=等倍、0.71≈-3dB（MUCOM88Vデフォルト）。IFmEngine にパススルー |
 | `getSsgMixScale()` | 現在のSSGスケール値 |
-| `setGlobalAttenuation(att)` | グローバル減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A: att*63/127でTL減衰。ADPCM-Bには影響しない |
-| `globalAttenuation()` | 現在の減衰値 |
+| `setGlobalAttenuation(att)` | ダッキング減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A/B: スケーリング。マスターボリューム・フェードと独立に加算される |
+| `globalAttenuation()` | 合算減衰値（masterAtt + fadeAtt + duckAtt） |
+
+**3層減衰アーキテクチャ:** マスターボリューム、フェード、ダッキングの3成分がFM TL単位で独立に管理され、合算値が各チャンネルに適用される。
 
 ### 状態取得
 

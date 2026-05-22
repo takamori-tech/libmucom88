@@ -135,7 +135,10 @@ public:
         m_globalTempo       = 120;
         m_loopTickOffset    = 0;
         m_perChannelLoop   = false;
-        m_globalAtt         = 0;
+        m_fadeAtt  = 0;
+        m_duckAtt  = 0;
+        m_fading   = false;
+        m_globalAtt = m_masterAtt;
 
         // 全チャンネルのランタイム状態をフルリセット（libmucom88-mml#2）
         // イベント列(events)は保持し、再生位置とランタイム状態のみ初期化
@@ -244,10 +247,11 @@ public:
     void stop()
     {
         m_playing = false;
-        auto prev = m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
-        if (prev != VoiceDuckState::Idle && m_globalAtt != 0) {
-            setGlobalAttenuation(0);
-        }
+        m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
+        m_fadeAtt = 0;
+        m_duckAtt = 0;
+        m_fading  = false;
+        m_globalAtt = m_masterAtt;
         if (m_engine) allSoundOff();
     }
 
@@ -357,9 +361,12 @@ public:
             adpcmbKeyOff();
             m_channels[10].noteOn = false;
         }
-        // エンジンにボイス開始を指示（状態遷移より先に実行）
-        // → tickVoiceTimer側のCASが isVoicePlaying()=false を誤検出しない
         m_engine->playVoice(voiceId);
+        // マスターボリュームをボイスに適用（フェード・ダッキングは適用しない）
+        if (m_masterAtt > 0) {
+            int voiceVol = std::clamp(255 - m_masterAtt * 2, 0, 255);
+            m_engine->writeReg(1, 0x0B, (uint8_t)voiceVol);
+        }
         // ダッキング開始: FM/SSGを即座に減衰（状態遷移前にレジスタ書き込み）
         if (m_duckEnabled) {
             setGlobalAttenuation(m_duckAttTarget);
@@ -411,10 +418,8 @@ public:
                 setGlobalAttenuation(att);
             }
         }
-        // 安全弁: Idle状態なのにm_globalAttが残っている場合は強制復帰
-        // CAS成功後にplayVoice()の割り込みでリリースブロックがスキップされ、
-        // その後stopVoice()でIdleに遷移した場合などに対応
-        if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle && m_globalAtt != 0) {
+        // 安全弁: Idle状態なのにduckAttが残っている場合は強制復帰
+        if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle && m_duckAtt != 0) {
             setGlobalAttenuation(0);
         }
     }
@@ -448,32 +453,61 @@ public:
         return m_engine ? m_engine->getSsgMixScale() : 1.0f;
     }
 
-    // ── グローバル減衰（ダッキング用）────────────────────
-    // att: FM TL加算値（0=通常、20≈-15dB）。SSGはatt/4で換算。
-    // ADPCM-Aはatt*63/127でTL減衰。ADPCM-Bには影響しない。
+    // ── マスターボリューム ─────────────────────────────
+    // vol: 0.0（無音）〜 1.0（最大）。FM TL減衰値に内部変換。
+    // ダッキングやフェードとは独立。play()/stop()でリセットされない。
+    void setMasterVolume(float vol) {
+        m_masterAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        recalcGlobalAtt();
+    }
+    float getMasterVolume() const {
+        return 1.0f - (float)m_masterAtt / 127.0f;
+    }
+
+    // ── フェードアウト/イン ──────────────────────────────
+    // fadeOut: 指定秒数で無音まで減衰。フェード中にplay()/stop()するとリセット。
+    void fadeOut(float seconds) {
+        if (seconds <= 0.0f) {
+            m_fadeAtt = 127;
+            m_fading = false;
+            recalcGlobalAtt();
+            return;
+        }
+        m_fadeStartAtt  = m_fadeAtt;
+        m_fadeTargetAtt = 127;
+        m_fadeTotalSamples = (uint32_t)(seconds * m_sampleRate);
+        m_fadeSamplesLeft  = m_fadeTotalSamples;
+        m_fading = true;
+    }
+    // fadeIn: 指定秒数で現在のフェードレベルからマスターボリュームまで復帰。
+    void fadeIn(float seconds) {
+        if (seconds <= 0.0f) {
+            m_fadeAtt = 0;
+            m_fading = false;
+            recalcGlobalAtt();
+            return;
+        }
+        m_fadeStartAtt  = m_fadeAtt;
+        m_fadeTargetAtt = 0;
+        m_fadeTotalSamples = (uint32_t)(seconds * m_sampleRate);
+        m_fadeSamplesLeft  = m_fadeTotalSamples;
+        m_fading = true;
+    }
+    // resetFade: フェードを即座にキャンセルし、マスターボリュームに復帰。
+    void resetFade() {
+        m_fadeAtt = 0;
+        m_fading = false;
+        recalcGlobalAtt();
+    }
+    bool isFading() const { return m_fading; }
+
+    // ── グローバル減衰（ダッキング用・後方互換）─────────────
+    // att: FM TL加算値（0=通常、20≈-15dB）。ダッキング成分を設定。
+    // マスターボリューム・フェードとは独立に加算される。
     void setGlobalAttenuation(int att)
     {
-        m_globalAtt = att;
-        if (!m_engine) return;
-        // 即時反映: 全アクティブFMチャンネルの音量を再設定
-        for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
-            int ch = fmMmlCh(fi);
-            fmSetVolume(fi, m_channels[ch].volume);
-        }
-        // 即時反映: 全アクティブSSGチャンネルの振幅を再設定
-        for (int si = 0; si < MAX_SSG_CHANNELS; si++) {
-            int ch = si + 3;
-            if (m_channels[ch].noteOn) {
-                int vol = std::clamp(m_channels[ch].volume - m_globalAtt / 4, 0, 15);
-                m_engine->writeReg(0, 0x08 + si, (uint8_t)(vol & 0x0F));
-            }
-        }
-        // 即時反映: ADPCM-A 全体音量TL を減衰
-        // reg 0x11: 6bit TL（0x3F=最大、0x00=無音、チップ内部で^0x3F反転）
-        // att=0→元のTLをそのまま、att=127→TLを0にする
-        int rhythmAtt = m_globalAtt * 63 / 127;
-        int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
-        m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
+        m_duckAtt = att;
+        recalcGlobalAtt();
     }
     int globalAttenuation() const { return m_globalAtt; }
 
@@ -506,6 +540,20 @@ public:
         //   16サンプルごとに AudioLeftMs += 16 * (1000.0 / sampleRate)
         //   整数ミリ秒分を UpdateTime(ms << 10) に渡す
         //   Timer-Bカウンタから (ms << 10) を減算、0以下でtick発生
+
+        // フェード処理（サンプル単位で進行、テンポ非依存）
+        if (m_fading) {
+            if (frameCount >= m_fadeSamplesLeft) {
+                m_fadeSamplesLeft = 0;
+                m_fadeAtt = m_fadeTargetAtt;
+                m_fading = false;
+            } else {
+                m_fadeSamplesLeft -= frameCount;
+                float t = 1.0f - (float)m_fadeSamplesLeft / m_fadeTotalSamples;
+                m_fadeAtt = m_fadeStartAtt + (int)((m_fadeTargetAtt - m_fadeStartAtt) * t);
+            }
+            recalcGlobalAtt();
+        }
 
         // 16サンプル単位で処理（OpenMUCOM88と同じ粒度）
         m_globalSampleAccum += frameCount;
@@ -1169,7 +1217,17 @@ private:
     // 楽器別 Individual Level レジスタ（0x18-0x1D）: bit7-6=PAN, bit4-0=Level
     // yコマンドやpコマンドで更新される。rhythmKeyOnで毎回書き込む。
     std::array<uint8_t, 6> m_rhythmIL = {0xDF,0xDF,0xDF,0xDF,0xDF,0xDF}; // L+R + level 31
-    int         m_globalAtt  = 0;     // グローバル減衰（FM TL加算値、0=通常）
+    int         m_globalAtt  = 0;     // 合算減衰値（FM TL加算値、0=通常）= masterAtt + fadeAtt + duckAtt
+    // 3層減衰アーキテクチャ: 各成分は独立に設定され、合算値がレジスタ書き込みに使用される
+    int         m_masterAtt  = 0;    // マスターボリューム減衰（0=最大、127=無音）
+    int         m_fadeAtt    = 0;    // フェードアウト減衰（0=フェードなし、127=無音）
+    int         m_duckAtt    = 0;    // ダッキング減衰（0=ダッキングなし）
+    // フェードアウト/イン状態
+    bool        m_fading           = false;
+    int         m_fadeStartAtt     = 0;     // フェード開始時のfadeAtt値
+    int         m_fadeTargetAtt    = 0;     // フェード目標のfadeAtt値
+    uint32_t    m_fadeTotalSamples = 0;     // フェード全体のサンプル数
+    uint32_t    m_fadeSamplesLeft  = 0;     // フェード残りサンプル数
     // ボイス再生＋ダッキング状態マシン（スレッド安全）
     // ゲームスレッド: playVoice/stopVoice で store/exchange
     // オーディオスレッド: tickVoiceTimer で CAS 遷移
@@ -1738,6 +1796,28 @@ private:
         double calc = (double)tb * TIMER_STEPD;
         m_timerBPeriod = (int)(calc * 1024.0);  // fmgen互換: int truncation
         if (m_timerBPeriod <= 0) m_timerBPeriod = 1;
+    }
+
+    // 3成分の合算減衰値を再計算し、全チャンネルのレジスタに即時反映
+    void recalcGlobalAtt()
+    {
+        m_globalAtt = std::clamp(m_masterAtt + m_fadeAtt + m_duckAtt, 0, 127);
+        if (!m_engine) return;
+        for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
+            int ch = fmMmlCh(fi);
+            fmSetVolume(fi, m_channels[ch].volume);
+        }
+        for (int si = 0; si < MAX_SSG_CHANNELS; si++) {
+            int ch = si + 3;
+            if (m_channels[ch].noteOn) {
+                int vol = std::clamp(m_channels[ch].volume - m_globalAtt / 4, 0, 15);
+                m_engine->writeReg(0, 0x08 + si, (uint8_t)(vol & 0x0F));
+            }
+        }
+        int rhythmAtt = m_globalAtt * 63 / 127;
+        int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
+        m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
+        adpcmbSetVolume(m_channels[10].volume);
     }
 
     // 全消音
