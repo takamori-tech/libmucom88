@@ -176,6 +176,12 @@ ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が�
 - 復帰時: FM音色・TL・PAN、SSGミキサーを現在のBGM状態に復元
 - 対象: FM ch1-6 (A-C, H-J)、SSG ch1-3 (D-F)。Rhythm (G)、ADPCM-B (K) はハイジャック対象外
 
+**レジスタ保護:** ハイジャック中のチャンネルは以下の全パスでレジスタ書き込みがスキップされ、SE再生中の音色/音量がBGM側から上書きされることはない:
+- `advance()` 内のイベント処理・SOFENV・FMリバーブ
+- `recalcGlobalAtt()` （フェードアウト・ダッキング変更時）
+- `resume()` （一時停止→再開時）
+- `globalLoopRestart()` / `perChannelRestart()` （BGMループ巻き戻し時）
+
 ### マスターボリューム
 
 | メソッド | 説明 |
