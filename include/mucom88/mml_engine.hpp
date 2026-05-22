@@ -281,6 +281,7 @@ public:
         if (m_engine) {
             allSoundOff();
             for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
+                if (m_channels[fmMmlCh(fi)].hijacked) continue;
                 fmApplyPatch(fi, m_fmPatchNo[fi]);
                 fmSetVolume(fi, m_channels[fmMmlCh(fi)].volume);
             }
@@ -938,18 +939,20 @@ public:
             }
         }
 
-        // Timer-B再計算 + 音色/PAN/音量復元
+        // Timer-B再計算 + 音色/PAN/音量復元（ハイジャック中チャンネルはスキップ）
         recalcTimerB();
-        for (int fi = 0; fi < MAX_FM_CHANNELS; fi++)
+        for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
+            if (m_channels[fmMmlCh(fi)].hijacked) continue;
             fmApplyPatch(fi, m_fmPatchNo[fi]);
-        // フェードアウト中のループ再開でキャリアTLが未減衰にならないよう
-        // m_globalAtt を反映した音量を即時適用（Issue #19）
+        }
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
             int ch = fmMmlCh(fi);
+            if (m_channels[ch].hijacked) continue;
             fmSetVolume(fi, m_channels[ch].volume);
         }
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             if (isFM(ch)) {
+                if (m_channels[ch].hijacked) continue;
                 int fi = toFMIndex(ch);
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
@@ -1112,18 +1115,20 @@ public:
             }
         }
 
-        // 音色/PAN/音量復元
-        if (isFM(ch)) {
-            int fi = toFMIndex(ch);
-            fmApplyPatch(fi, m_fmPatchNo[fi]);
-            fmSetVolume(fi, st.volume);
-            int port = fmPort(fi);
-            int off  = fmOffset(fi);
-            m_engine->writeReg(port, 0xB4 + off,
-                (uint8_t)(panToReg(st.pan)));
-        }
-        if (isSSG(ch)) {
-            m_engine->writeReg(0, 0x07, m_ssgMixer);
+        // 音色/PAN/音量復元（ハイジャック中はスキップ）
+        if (!st.hijacked) {
+            if (isFM(ch)) {
+                int fi = toFMIndex(ch);
+                fmApplyPatch(fi, m_fmPatchNo[fi]);
+                fmSetVolume(fi, st.volume);
+                int port = fmPort(fi);
+                int off  = fmOffset(fi);
+                m_engine->writeReg(port, 0xB4 + off,
+                    (uint8_t)(panToReg(st.pan)));
+            }
+            if (isSSG(ch)) {
+                m_engine->writeReg(0, 0x07, m_ssgMixer);
+            }
         }
 
         // per-channel tick base更新
