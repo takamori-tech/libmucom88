@@ -1818,10 +1818,12 @@ private:
         if (!m_engine) return;
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
             int ch = fmMmlCh(fi);
+            if (m_channels[ch].hijacked) continue;
             fmSetVolume(fi, m_channels[ch].volume);
         }
         for (int si = 0; si < MAX_SSG_CHANNELS; si++) {
             int ch = si + 3;
+            if (m_channels[ch].hijacked) continue;
             if (m_channels[ch].noteOn) {
                 int vol = std::clamp(m_channels[ch].volume - m_globalAtt / 4, 0, 15);
                 m_engine->writeReg(0, 0x08 + si, (uint8_t)(vol & 0x0F));
