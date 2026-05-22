@@ -961,6 +961,8 @@ public:
             }
         }
         m_engine->writeReg(0, 0x07, m_ssgMixer);
+        // ADPCM-B: フェード/ダッキング反映ボリュームを復元
+        adpcmbSetVolume(m_channels[10].volume);
 
         // per-channel独立ループの初期化（Issue #62/#68）
         // 初回のglobalLoopRestartで全チャンネル一斉に巻き戻した後、
@@ -1128,6 +1130,9 @@ public:
             }
             if (isSSG(ch)) {
                 m_engine->writeReg(0, 0x07, m_ssgMixer);
+            }
+            if (isADPCMB(ch)) {
+                adpcmbSetVolume(st.volume);
             }
         }
 
@@ -2434,10 +2439,9 @@ private:
 
         uint16_t deltaN = adpcmbNoteToDeltaN(noteNum);
         int vol = m_channels[10].volume;
-        // Z80 PLAY volume: TOTALV*4 + IX+6 [+ IX+7], clamp 250
-        // Z80コンパイラSTV4→STV1: ADPCM-BはIX+6 = user_vol（+4なし、TV_OFSなし）
-        // PLAYルーチン: TOTALV*4 + IX+6 [+ IX+7(PVMODE=1時)]
-        int finalVol = vol + m_globalAtt * 4;
+        // ADPCM-B vol register: 0=silent, 255=max。減衰はvolから減算。
+        // m_globalAtt(0-127) → ADPCM-B scale: *2 (127*2=254 ≈ フルレンジ)
+        int finalVol = vol - m_globalAtt * 2;
         if (m_pcmVolMode != 0) finalVol += m_pcmAddVol;
         if (finalVol > 250) finalVol = 250;
         if (finalVol < 0) finalVol = 0;
@@ -2468,9 +2472,8 @@ private:
     void adpcmbSetVolume(int vol)
     {
         if (!m_engine) return;
-        // Z80 PLAY: TOTALV*4 + IX+6 [+ IX+7], clamp 250
-        // Z80コンパイラSTV4→STV1: ADPCM-BはIX+6 = user_vol（+4なし、TV_OFSなし）
-        int finalVol = vol + m_globalAtt * 4;
+        // ADPCM-B vol register: 0=silent, 255=max。減衰はvolから減算。
+        int finalVol = vol - m_globalAtt * 2;
         if (m_pcmVolMode != 0) finalVol += m_pcmAddVol;
         if (finalVol > 250) finalVol = 250;
         if (finalVol < 0) finalVol = 0;
