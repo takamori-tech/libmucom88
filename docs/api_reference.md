@@ -155,6 +155,19 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 ボイス終了後に releaseSec かけて元の音量に復帰する。
 ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が減衰対象。
 
+### チャンネルハイジャック（効果音割り込み用）
+
+| メソッド | 説明 |
+|---------|------|
+| `hijackChannel(ch)` | チャンネルをSEモードに設定。BGMのKEY_OFFを実行し、以降のレジスタ書き込みを抑制。外部コードがIFmEngine::writeReg()で直接制御可能になる |
+| `releaseChannel(ch)` | チャンネルをBGMモードに復帰。音色・音量・PANを現在のBGM状態に復元 |
+| `isChannelHijacked(ch)` | ハイジャック中か |
+
+**動作仕様:**
+- ハイジャック中: BGMのイベント進行は継続（曲の再生位置を追跡）するが、レジスタ書き込み・LFO・ポルタメント・SSGエンベロープは実行しない
+- 復帰時: FM音色・TL・PAN、SSGミキサーを現在のBGM状態に復元
+- 対象: FM ch1-6 (A-C, H-J)、SSG ch1-3 (D-F)。Rhythm (G)、ADPCM-B (K) はハイジャック対象外
+
 ### 音量バランス・制御
 
 | メソッド | 説明 |

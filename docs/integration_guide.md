@@ -191,6 +191,11 @@ void audioCallback(void* userdata, uint8_t* stream, int len) {
         // MMLシーケンサーを進める（レジスタ書き込みが発生）
         engine.advance(n);
 
+        // ボイスタイマー更新（ダッキングリリース処理を含む）
+        // 重要: isVoicePlaying() の結果に関わらず毎フレーム呼ぶこと。
+        // 条件付き呼び出しにするとボイス終了後のダッキングリリースが発火しない。
+        engine.tickVoiceTimer(n);
+
         // YM2608エミュレータで音声生成
         int16_t buf[32];  // max 16 frames × 2ch
         fmEngine.generateInterleaved(buf, n);
@@ -261,6 +266,12 @@ ADPCM-B（ボイス）の音量には影響しないため、ボイスの聞き�
 
 ダッキングを無効にするには `setDucking(0)` を呼ぶ。
 
+> **注意:** `tickVoiceTimer(frameCount)` はオーディオコールバック内で **毎フレーム無条件に** 呼ぶこと。
+> `isVoicePlaying()` が false の場合でも呼び出しが必要。
+> ボイス終了後のダッキングリリース遷移（Playing → Releasing → Idle）は
+> `tickVoiceTimer()` 内で処理されるため、呼び出しを省略すると
+> BGMの音量が減衰したまま復帰しなくなる。
+
 ### 手動ダッキング
 
 自動ダッキングを使わず、出力バッファに直接ゲインを掛ける方法もある:
@@ -272,6 +283,46 @@ for (uint32_t i = 0; i < frameCount * 2; i++)
 ```
 
 この方法はボイスを含む全出力に影響する点に注意。
+
+## チャンネルハイジャック（効果音割り込み）
+
+BGM再生中のFM/SSGチャンネルをSE（効果音）再生に一時的に奪う機能。
+アーケードSTGのように、BGMとSEが同一YM2608チップを共有する場合に使用する。
+
+```cpp
+// SE再生開始: FM ch6（パートJ、ch=9）をハイジャック
+engine.hijackChannel(9);
+// → BGMのJ partはKEY_OFFされ、以降のレジスタ書き込みが抑制される
+// → 外部コードがIFmEngine::writeReg()で直接制御可能
+
+// SE用のレジスタ操作
+fmEngine->writeReg(1, 0xA4 + 2, ...);  // FM ch6 周波数
+fmEngine->writeReg(1, 0x40 + 12, ...); // FM ch6 TL
+fmEngine->writeReg(0, 0x28, 0xF6);     // FM ch6 KEY ON
+
+// SE終了: チャンネルをBGMに返却
+engine.releaseChannel(9);
+// → BGMの音色・音量・PANが自動復元される
+```
+
+**動作仕様:**
+- ハイジャック中、BGMのイベント進行は継続（曲の再生位置を追跡）するが発音しない
+- `releaseChannel()` でBGMの現在の音色・音量・PANをレジスタに復元して再開
+- 対象: FM ch1-6 (A-C, H-J) および SSG ch1-3 (D-F)
+- Rhythm (G) と ADPCM-B (K) は対象外（既存のボイス再生APIで制御）
+
+**SE用チャンネル選択の指針:**
+```cpp
+// 最もアクティブでないFMチャンネルを選択する例
+int bestCh = -1;
+for (int ch : {9, 8, 7, 2, 1, 0}) {  // J,I,H,C,B,A の優先順
+    if (!engine.chNoteOn(ch)) {
+        bestCh = ch;
+        break;
+    }
+}
+if (bestCh >= 0) engine.hijackChannel(bestCh);
+```
 
 ## チャンネル状態の取得（UI表示用）
 

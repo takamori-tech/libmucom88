@@ -135,6 +135,7 @@ public:
         m_globalTempo       = 120;
         m_loopTickOffset    = 0;
         m_perChannelLoop   = false;
+        m_globalAtt         = 0;
 
         // 全チャンネルのランタイム状態をフルリセット（libmucom88-mml#2）
         // イベント列(events)は保持し、再生位置とランタイム状態のみ初期化
@@ -243,7 +244,10 @@ public:
     void stop()
     {
         m_playing = false;
-        m_voiceDuckState.store(VoiceDuckState::Idle, std::memory_order_release);
+        auto prev = m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
+        if (prev != VoiceDuckState::Idle && m_globalAtt != 0) {
+            setGlobalAttenuation(0);
+        }
         if (m_engine) allSoundOff();
     }
 
@@ -290,6 +294,51 @@ public:
     // FM パッチ番号取得（fi=FMインデックス 0-5）
     int  fmPatchNo(int fi) const { return (fi >= 0 && fi < MAX_FM_CHANNELS) ? m_fmPatchNo[fi] : -1; }
 
+    // ── チャンネルハイジャック（効果音割り込み用）──────────
+    // BGM再生中のチャンネルをSE再生に一時的に奪う。
+    // ハイジャック中はBGMのレジスタ書き込みを抑制し、
+    // 外部コードがIFmEngine::writeReg()で直接制御可能になる。
+    // BGMのイベント進行は継続し、releaseChannel()で状態復元して再開。
+    void hijackChannel(int ch)
+    {
+        if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
+        if (isRhythm(ch) || isADPCMB(ch)) return;
+        auto& st = m_channels[ch];
+        st.hijacked = true;
+        if (m_engine && st.noteOn) {
+            if      (isFM(ch))  fmKeyOff(toFMIndex(ch));
+            else if (isSSG(ch)) ssgKeyOff(toSSGIndex(ch));
+        }
+    }
+    void releaseChannel(int ch)
+    {
+        if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
+        auto& st = m_channels[ch];
+        if (!st.hijacked) return;
+        st.hijacked = false;
+        if (!m_engine) return;
+        if (isFM(ch)) {
+            int fi = toFMIndex(ch);
+            fmApplyPatch(fi, m_fmPatchNo[fi]);
+            fmSetVolume(fi, st.volume);
+            int port = fmPort(fi);
+            int off  = fmOffset(fi);
+            m_engine->writeReg(port, 0xB4 + off, (uint8_t)panToReg(st.pan));
+        } else if (isSSG(ch)) {
+            int si = toSSGIndex(ch);
+            m_engine->writeReg(0, 0x07, m_ssgMixer);
+            if (st.ssgSoftEnv) {
+                st.ssgEnvValue = st.ssgEnvAL;
+                st.ssgEnvPhase = 1;
+                st.ssgEnvKeyOnTick = true;
+            }
+        }
+    }
+    bool isChannelHijacked(int ch) const
+    {
+        return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].hijacked : false;
+    }
+
     // ── ADPCM-B ボイス再生（IFmEngine パススルー + Kトラック優先制御）──
     // ゲームボイス再生中はBGMのKトラック(ch10)イベント処理を抑制し、
     // ADPCM-Bをボイス再生に専有させる。
@@ -333,18 +382,19 @@ public:
     void tickVoiceTimer(uint32_t frameCount) {
         if (!m_engine) return;
         m_engine->tickVoiceTimer(frameCount);
-        // ボイス終了検出 → ダッキングリリースへ遷移（CASで競合回避）
-        // CAS失敗 = ゲームスレッドが playVoice() で Playing を再セットした
-        //         → 新しいボイスが再生中なのでリリースしない
+        // ボイス終了検出 → ダッキングリリースまたは即時復帰
+        // 判定は m_globalAtt > 0（実際にダッキングが適用されているか）で行う。
+        // m_duckEnabled の動的変更に左右されない。
         auto state = m_voiceDuckState.load(std::memory_order_acquire);
         if (state == VoiceDuckState::Playing && !m_engine->isVoicePlaying()) {
-            auto next = m_duckEnabled ? VoiceDuckState::Releasing : VoiceDuckState::Idle;
+            bool needRelease = (m_globalAtt > 0 && m_duckReleaseSamples > 0);
+            auto next = needRelease ? VoiceDuckState::Releasing : VoiceDuckState::Idle;
             VoiceDuckState expected = VoiceDuckState::Playing;
             if (m_voiceDuckState.compare_exchange_strong(expected, next, std::memory_order_acq_rel)) {
                 if (next == VoiceDuckState::Releasing) {
                     m_duckReleaseSamplesLeft = m_duckReleaseSamples;
                 } else {
-                    setGlobalAttenuation(0);
+                    if (m_globalAtt != 0) setGlobalAttenuation(0);
                 }
             }
         }
@@ -361,6 +411,12 @@ public:
                 int att = (int)(m_duckAttTarget * t);
                 setGlobalAttenuation(att);
             }
+        }
+        // 安全弁: Idle状態なのにm_globalAttが残っている場合は強制復帰
+        // CAS成功後にplayVoice()の割り込みでリリースブロックがスキップされ、
+        // その後stopVoice()でIdleに遷移した場合などに対応
+        if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle && m_globalAtt != 0) {
+            setGlobalAttenuation(0);
         }
     }
     void stopAdpcmB() {
@@ -557,11 +613,15 @@ public:
                     }
                     // ボイス再生中はKトラック(ch10)のイベント処理を抑制
                     if (!(isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Playing)) {
-                        processEvents(ch, m_globalTick);
-                        if (st.noteOn && st.lfoEnabled && st.lfoDepth != 0)
-                            tickLfo(ch);
-                        if (st.portaActive)
-                            tickPortamento(ch);
+                        if (st.hijacked) {
+                            advanceEventsSilent(ch, m_globalTick);
+                        } else {
+                            processEvents(ch, m_globalTick);
+                            if (st.noteOn && st.lfoEnabled && st.lfoDepth != 0)
+                                tickLfo(ch);
+                            if (st.portaActive)
+                                tickPortamento(ch);
+                        }
                     }
                 }
 
@@ -570,6 +630,7 @@ public:
                 // リリース中: 音量を減衰させる（MUCOM88 SSSUBA互換）
                 for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
                     if (!isSSG(ch)) continue;
+                    if (m_channels[ch].hijacked) continue;
                     auto& cst = m_channels[ch];
                     int si = toSSGIndex(ch);
 
@@ -617,6 +678,7 @@ public:
                 // Z80互換: チャンネルデータ終了後はFMSUB0が呼ばれないため停止
                 for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
                     if (!isFM(ch)) continue;
+                    if (m_channels[ch].hijacked) continue;
                     auto& cst = m_channels[ch];
                     if (!cst.reverbActive) continue;
                     // チャンネル終了後は停止（Z80: データ終了後FMSUB0不呼び出し）
@@ -1075,6 +1137,8 @@ private:
         // Z80 MDSET→TO_EFC/EXMODE: 毎tickで4オペレータ独立F-Number + 4回KEY ON
         bool     csmEnabled     = false;
         int      csmDetune[4]   = {0, 0, 0, 0};  // OP1-OP4 デチューンオフセット
+        // チャンネルハイジャック（SE割り込み用）
+        bool     hijacked       = false;
     };
 
     IFmEngine*  m_engine;
@@ -1493,6 +1557,78 @@ private:
         // 短いチャンネルもcommonEndTickまで無音で待機する。
         // globalLoopRestartで全チャンネルが一斉にLポイントへ戻る。
       }
+    }
+
+    // =====================================================================
+    // ハイジャック中のイベント進行（レジスタ書き込みなし）
+    // BGM状態（音量・音色・パン・テンポ等）を追跡しつつ、発音はしない。
+    // releaseChannel() で現在のBGM状態をレジスタに復元して再開する。
+    // =====================================================================
+    void advanceEventsSilent(int ch, uint32_t tick)
+    {
+        auto& st = m_channels[ch];
+        uint32_t chTick = (m_perChannelLoop && st.hasLoopPoint)
+                        ? (tick - st.perChTickBase)
+                        : (tick - m_loopTickOffset);
+        while (st.eventIdx < st.events.size()) {
+            const MmlEvent& ev = st.events[st.eventIdx];
+            if (m_commonEndTick > 0 && ev.tick > m_commonEndTick) {
+                st.noteOn = false;
+                st.eventIdx = st.events.size();
+                break;
+            }
+            if (ev.tick > chTick) break;
+            switch (ev.type) {
+            case MmlEventType::TEMPO:    m_globalTempo = ev.value; break;
+            case MmlEventType::VOLUME:   st.volume = ev.value; break;
+            case MmlEventType::PATCH:
+                if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
+                if (isSSG(ch)) {
+                    int idx = ev.value & 0x0F;
+                    if (idx < SSGDAT_COUNT) {
+                        const auto& preset = SSGDAT[idx];
+                        st.ssgSoftEnv = true;
+                        st.ssgEnvAL = preset.env[0]; st.ssgEnvAR = preset.env[1];
+                        st.ssgEnvDR = preset.env[2]; st.ssgEnvSL = preset.env[3];
+                        st.ssgEnvSR = preset.env[4]; st.ssgEnvRR = preset.env[5];
+                    }
+                }
+                break;
+            case MmlEventType::PAN:       st.pan = ev.value; break;
+            case MmlEventType::STACCATO:  st.staccato = ev.value; break;
+            case MmlEventType::DETUNE:    st.detune = ev.value; break;
+            case MmlEventType::NOTE_ON:   st.currentNote = ev.note; st.noteOn = true; break;
+            case MmlEventType::NOTE_OFF:  st.noteOn = false; break;
+            case MmlEventType::REST:      st.noteOn = false; break;
+            case MmlEventType::VIBRATO:
+                st.lfoEnabled = true;
+                st.lfoDelay = ev.vibDelay; st.lfoRate = ev.vibRate;
+                st.lfoDepth = ev.vibDepth; st.lfoCount = ev.vibCount;
+                break;
+            case MmlEventType::VIBRATO_SWITCH:
+                st.lfoEnabled = (ev.value != 0); break;
+            case MmlEventType::REVERB_ENVELOPE:
+                st.reverbValue = ev.value; st.reverbEnabled = true; break;
+            case MmlEventType::REVERB_SWITCH:
+                st.reverbEnabled = (ev.value != 0); break;
+            case MmlEventType::SSG_ENVELOPE:
+                st.ssgSoftEnv = true;
+                st.ssgEnvAL = ev.envAL; st.ssgEnvAR = ev.envAR;
+                st.ssgEnvDR = ev.envDR; st.ssgEnvSL = ev.envSL;
+                st.ssgEnvSR = ev.envSR; st.ssgEnvRR = ev.envRR;
+                break;
+            case MmlEventType::LOOP_POINT:
+                st.hasLoopPoint = true;
+                st.loopEventIdx = st.eventIdx + 1;
+                st.loopTick = ev.tick;
+                break;
+            case MmlEventType::END:
+                st.eventIdx = st.events.size();
+                return;
+            default: break;
+            }
+            st.eventIdx++;
+        }
     }
 
     // =====================================================================
