@@ -3,36 +3,23 @@
 MUCOM88互換 MMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ライブラリ（YM2608 / OPNA）。
 ヘッダーオンリーC++17。外部依存なし。
 
-## プロジェクト構成
-
-```
-include/mucom88/
-  fm_common.hpp              FM音色定義（FmPatch/Mucom88Patch）、周波数変換、voice.datパーサー
-  fm_engine_interface.hpp    IFmEngine 抽象インターフェース（YM2608エミュレータの共通API）
-  mml_parser.hpp             MMLパーサー（MUCOM88形式、132曲検証済み）
-  mml_engine.hpp             MMLシーケンサー（Timer-B駆動、11ch、ボイス再生、ダッキング、マスターボリューム、フェード）
-docs/
-  api_reference.md           全クラス・メソッドの詳細
-  integration_guide.md       ゲームプログラム組み込みガイド
-```
+詳細API: @docs/api_reference.md / 組み込みガイド: @docs/integration_guide.md
 
 ## アーキテクチャ
 
+ヘッダーオンリー設計: submodule経由で複数プロジェクト（VST/AU, ゲーム）に組み込むため、ビルド依存を最小化。
+IFmEngineを抽象化している理由: エミュレータ実装（fmgen等）を利用側に委ねることで、ライブラリ自体をエミュレータ非依存にする。
+
 ```
 MUCテキスト (.muc)
-    │
     ▼
 MmlParser ── パース、マクロ展開、イベント列生成
-    │
     ▼
 MmlEngine ── シーケンス再生、Timer-B駆動、レジスタ書き込み
-    │         ボイス再生、ダッキング、マスターボリューム、フェード
-    │         チャンネルハイジャック（SE割り込み）
     ▼
-IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
-    │
+IFmEngine ── 抽象インターフェース（利用側で実装）
     ▼
-[YM2608エミュレータ]  （fmgen 等、利用側で実装）
+[YM2608エミュレータ]
 ```
 
 ## チャンネル構成（11ch）
@@ -63,6 +50,8 @@ libmucom88のヘッダーを変更する場合の手順:
 - コメントは日本語
 - C++17（`<algorithm>`, `std::clamp`, 構造化束縛 等を使用）
 - ヘッダーオンリー設計を維持（.cpp を追加しない）
+- `#pragma once` を使用（include guard は使わない）
+- 例外は使用しない（エラーはbool戻り値またはstd::optionalで返す）
 - `fm_common.hpp` は他プロジェクトと共有するため、変更時は後方互換性に注意
 
 ## MML再現目標
