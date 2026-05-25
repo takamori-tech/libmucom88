@@ -481,6 +481,9 @@ public:
                 }
                 m_seEngine->writeReg(0, 0x07, 0x3F);
                 m_seEngine->writeReg(0, 0x27, 0x3A);
+                // BGMチップと同じSSGミックスバランスを適用
+                if (m_engine)
+                    m_seEngine->setSsgMixScale(m_engine->getSsgMixScale());
             }
         } else {
             m_seEngine = nullptr;
@@ -564,6 +567,7 @@ public:
     // MUCOM88Vデフォルト: 0.71（-3dB）
     void setSsgMixScale(float ssgScale) {
         if (m_engine) m_engine->setSsgMixScale(ssgScale);
+        if (m_seEngine) m_seEngine->setSsgMixScale(ssgScale);
     }
     float getSsgMixScale() const {
         return m_engine ? m_engine->getSsgMixScale() : 1.0f;
