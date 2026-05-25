@@ -585,6 +585,17 @@ public:
         return 1.0f - (float)m_masterAtt / 127.0f;
     }
 
+    // ── SEボリューム ───────────────────────────────────
+    // vol: 0.0（無音）〜 1.0（最大）。マスターボリュームと加算適用。
+    // play()/stop()でリセットされない。
+    void setSeVolume(float vol) {
+        m_seAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        seRecalcVolume();
+    }
+    float getSeVolume() const {
+        return 1.0f - (float)m_seAtt / 127.0f;
+    }
+
     // ── フェードアウト/イン ──────────────────────────────
     // fadeOut: 指定秒数で無音まで減衰。フェード中にplay()/stop()するとリセット。
     void fadeOut(float seconds) {
@@ -1396,6 +1407,7 @@ private:
     int         m_globalAtt  = 0;     // 合算減衰値（FM TL加算値、0=通常）= masterAtt + fadeAtt + duckAtt
     // 3層減衰アーキテクチャ: 各成分は独立に設定され、合算値がレジスタ書き込みに使用される
     int         m_masterAtt  = 0;    // マスターボリューム減衰（0=最大、127=無音）
+    int         m_seAtt      = 0;    // SE専用ボリューム減衰（0=最大、127=無音）
     int         m_fadeAtt    = 0;    // フェードアウト減衰（0=フェードなし、127=無音）
     int         m_duckAtt    = 0;    // ダッキング減衰（0=ダッキングなし）
     // フェードアウト/イン状態
@@ -2629,7 +2641,7 @@ private:
         if (!engine) return;
         engine->applyPatch(fi, patch);
         int tlBase = fmvdatLookup(velocity);
-        int tl = std::clamp(tlBase + m_masterAtt, 0, 127);
+        int tl = std::clamp(tlBase + m_masterAtt + m_seAtt, 0, 127);
         seWriteCarrierTL(engine, fi, patch.al, tl);
         engine->setFrequency(fi, noteNum);
         engine->fmKeyOn(fi);
@@ -2717,7 +2729,7 @@ private:
             auto& slot = m_seSlots[i];
             if (!slot.active) continue;
             int tlBase = fmvdatLookup(slot.velocity);
-            int tl = std::clamp(tlBase + m_masterAtt, 0, 127);
+            int tl = std::clamp(tlBase + m_masterAtt + m_seAtt, 0, 127);
             IFmEngine* engine = (m_seMode == SeMode::Rich) ? m_seEngine : m_engine;
             seWriteCarrierTL(engine, slot.fmIndex, slot.patch.al, tl);
         }

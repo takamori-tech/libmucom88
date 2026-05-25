@@ -452,8 +452,15 @@ engine.setSeFrequency(slot, currentNote);
 ### SE音量
 
 - マスターボリューム（`setMasterVolume()`）はSEにも適用される
+- SEボリューム（`setSeVolume()`）はSE専用の独立音量。マスターボリュームと加算適用
 - フェード（`fadeOut()`/`fadeIn()`）はBGM専用。SEには影響しない
 - ダッキング（`setDucking()`）はBGM専用。SEには影響しない
+
+```cpp
+// ゲームオプション画面での音量設定例
+engine.setMasterVolume(0.8f);  // BGM+SE共通マスター 80%
+engine.setSeVolume(0.6f);      // SE音量 60%（BGMより控えめ）
+```
 
 ## チャンネル状態の取得（UI表示用）
 
