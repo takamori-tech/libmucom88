@@ -21,21 +21,7 @@ target_include_directories(your_target PRIVATE vendor/libmucom88/include)
 
 ## アーキテクチャ
 
-```
-MUCファイル (.muc)
-    │
-    ▼
-MmlParser ── MMLテキストをパース、マクロ展開、イベント列を生成
-    │
-    ▼
-MmlEngine ── イベント列を再生、Timer-B駆動、YM2608レジスタ書き込み
-    │         ボイス再生時のKトラック優先制御も担当
-    ▼
-IFmEngine ── 抽象インターフェース（writeReg, generateInterleaved, ...）
-    │
-    ▼
-[YM2608エミュレータ]  （fmgen 等）
-```
+![libmucom88 Architecture](diagrams/architecture.svg)
 
 ## ヘッダー一覧
 
@@ -214,6 +200,8 @@ MmlEngineのボイス再生APIを使うと、BGMのKトラック（ADPCM-B）と
 
 ### 動作の流れ
 
+![Voice Playback Flow](diagrams/voice_playback.svg)
+
 1. `playVoice(id)` を呼ぶ
    - BGMのKトラックが発音中であれば KEY_OFF で停止
    - `m_voiceOverride = true` でKトラックのイベント処理を抑制
@@ -284,7 +272,11 @@ for (uint32_t i = 0; i < frameCount * 2; i++)
 
 この方法はボイスを含む全出力に影響する点に注意。
 
-## マスターボリューム
+## 音量制御
+
+![3-Layer Volume Architecture](diagrams/volume_architecture.svg)
+
+### マスターボリューム
 
 ゲームのオプション画面等でBGM音量を調整する場合:
 
@@ -299,7 +291,7 @@ engine.playVoice(0);  // ボイスも80%の音量で再生
 マスターボリュームは `play()` / `stop()` でリセットされない（ゲーム設定として永続）。
 ダッキングやフェードとは独立に動作し、全て加算的に適用される。
 
-## フェードアウト/イン
+### フェードアウト/イン
 
 ステージ終了時のBGMフェードアウト:
 
@@ -333,10 +325,50 @@ engine.fadeIn(1.5f);    // 1.5秒かけてマスターボリュームまで復�
 engine.resetFade();  // マスターボリュームに即時復帰
 ```
 
+## SEモード（Classic / Rich）
+
+libmucom88のSE（効果音）再生には2つのモードがある。
+ゲームの要件に応じてどちらかを選択する。`playSe()` APIは両モード共通で使用できる。
+
+### Classicモード（デフォルト）
+
+BGMと同一のYM2608チップでSEを再生する。BGMのFMチャンネルを一時的にハイジャックしてSE用に使用するため、SE再生中はそのチャンネルのBGMが抑制される。アーケードゲーム（1チップ構成）と同じ方式。
+
+![Classic Mode](diagrams/se_mode_classic.svg)
+
+**特徴:**
+- 追加のYM2608インスタンス不要（軽量）
+- SE再生中、ハイジャックされたチャンネルのBGMが一時的に消える
+- ノートオフ中のチャンネルを優先選択することで影響を最小化
+
+### Richモード
+
+SE専用の2台目のYM2608チップ（IFmEngine）を使用する。BGMチップとSEチップが完全に独立しているため、BGMの発音に一切影響を与えずにSEを同時再生できる。
+
+![Rich Mode](diagrams/se_mode_rich.svg)
+
+**特徴:**
+- BGMチャンネルへの影響なし（全11chがBGM専用）
+- FM 6ch分のSE同時発音が可能
+- 追加のYM2608エミュレータインスタンスが必要（CPU負荷増）
+- `renderMixed()` でBGM+SEの出力を自動ミキシング
+
+### モード比較
+
+| | Classic | Rich |
+|---|---------|------|
+| チップ数 | 1（共有） | 2（BGM+SE） |
+| BGMへの影響 | SE再生中チャンネル抑制 | なし |
+| SE同時発音数 | 最大6（BGMチャンネル依存） | 最大6（SE専用） |
+| CPU負荷 | 低い | YM2608 x2分 |
+| セットアップ | 不要（デフォルト） | `setSeMode(Rich, &seEngine)` |
+| オーディオ出力 | 通常のadvance()+generate() | `renderMixed()` 推奨 |
+
 ## チャンネルハイジャック（効果音割り込み）
 
 BGM再生中のFM/SSGチャンネルをSE（効果音）再生に一時的に奪う機能。
 アーケードSTGのように、BGMとSEが同一YM2608チップを共有する場合に使用する。
+Classicモードの内部実装で使用されるが、直接呼び出すこともできる。
 
 ```cpp
 // SE再生開始: FM ch6（パートJ、ch=9）をハイジャック

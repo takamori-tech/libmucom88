@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arr-d" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#455A64"/>
+    </marker>
+    <marker id="arr-g" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#2E7D32"/>
+    </marker>
+    <marker id="arr-b" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#1565C0"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="400" fill="#FAFBFC" rx="6"/>
+
+  <!-- Title -->
+  <text x="360" y="28" text-anchor="middle" font-size="15" font-weight="600" fill="#263238" letter-spacing="0.5">libmucom88 Architecture</text>
+  <line x1="230" y1="38" x2="490" y2="38" stroke="#CFD8DC" stroke-width="0.5"/>
+
+  <!-- MUC File -->
+  <g filter="url(#shadow)">
+    <rect x="260" y="55" width="200" height="40" rx="8" fill="#ECEFF1" stroke="#B0BEC5" stroke-width="1.2"/>
+  </g>
+  <rect x="265" y="59" width="56" height="13" rx="6" fill="#78909C"/>
+  <text x="293" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">INPUT</text>
+  <text x="360" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="#37474F">MUC File (.muc)</text>
+
+  <!-- Arrow MUC -> Parser -->
+  <line x1="360" y1="95" x2="360" y2="120" stroke="#455A64" stroke-width="1.5" marker-end="url(#arr-d)"/>
+  <text x="375" y="112" font-size="8" fill="#78909C">MML text</text>
+
+  <!-- MmlParser -->
+  <g filter="url(#shadow)">
+    <rect x="220" y="124" width="280" height="50" rx="10" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.5"/>
+  </g>
+  <rect x="225" y="128" width="72" height="13" rx="6" fill="#2E7D32"/>
+  <text x="261" y="138" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">PARSER</text>
+  <text x="360" y="150" text-anchor="middle" font-size="12" font-weight="700" fill="#1B5E20">MmlParser</text>
+  <text x="360" y="165" text-anchor="middle" font-size="8.5" fill="#2E7D32">MML parse, macro expansion, event generation</text>
+
+  <!-- Arrow Parser -> Engine -->
+  <line x1="360" y1="174" x2="360" y2="200" stroke="#2E7D32" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <text x="375" y="192" font-size="8" fill="#78909C">MucFile</text>
+
+  <!-- MmlEngine -->
+  <g filter="url(#shadow)">
+    <rect x="220" y="204" width="280" height="50" rx="10" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.5"/>
+  </g>
+  <rect x="225" y="208" width="72" height="13" rx="6" fill="#1565C0"/>
+  <text x="261" y="218" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SEQUENCER</text>
+  <text x="360" y="230" text-anchor="middle" font-size="12" font-weight="700" fill="#0D47A1">MmlEngine</text>
+  <text x="360" y="245" text-anchor="middle" font-size="8.5" fill="#1565C0">Timer-B driven, 11ch sequence, register write</text>
+
+  <!-- Arrow Engine -> IFmEngine -->
+  <line x1="360" y1="254" x2="360" y2="280" stroke="#1565C0" stroke-width="1.5" marker-end="url(#arr-b)"/>
+  <text x="375" y="272" font-size="8" fill="#78909C">writeReg()</text>
+
+  <!-- IFmEngine -->
+  <g filter="url(#shadow)">
+    <rect x="220" y="284" width="280" height="50" rx="10" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.5"/>
+  </g>
+  <rect x="225" y="288" width="72" height="13" rx="6" fill="#E65100"/>
+  <text x="261" y="298" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">INTERFACE</text>
+  <text x="360" y="310" text-anchor="middle" font-size="12" font-weight="700" fill="#E65100">IFmEngine</text>
+  <text x="360" y="325" text-anchor="middle" font-size="8.5" fill="#F57F17">Abstract interface (implement on game side)</text>
+
+  <!-- Arrow IFmEngine -> YM2608 -->
+  <line x1="360" y1="334" x2="360" y2="350" stroke="#E65100" stroke-width="1.5" marker-end="url(#arr-d)"/>
+
+  <!-- YM2608 -->
+  <g filter="url(#shadow)">
+    <rect x="260" y="354" width="200" height="36" rx="8" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1.5"/>
+  </g>
+  <rect x="265" y="358" width="72" height="13" rx="6" fill="#7B1FA2"/>
+  <text x="301" y="368" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">EMULATOR</text>
+  <text x="360" y="380" text-anchor="middle" font-size="11" font-weight="600" fill="#6A1B9A">YM2608 (fmgen etc.)</text>
+
+  <!-- Side annotations -->
+  <!-- voice.dat -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="134" width="140" height="30" rx="6" fill="#FAFAFA" stroke="#E0E0E0" stroke-width="1"/>
+  </g>
+  <text x="110" y="154" text-anchor="middle" font-size="9" fill="#546E7A">voice.dat</text>
+  <line x1="180" y1="149" x2="220" y2="149" stroke="#78909C" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr-d)"/>
+
+  <!-- Game Code -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="214" width="140" height="30" rx="6" fill="#FAFAFA" stroke="#E0E0E0" stroke-width="1"/>
+  </g>
+  <text x="610" y="234" text-anchor="middle" font-size="9" fill="#546E7A">Game Code (C++17)</text>
+  <line x1="540" y1="229" x2="500" y2="229" stroke="#78909C" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr-d)"/>
+
+  <text x="700" y="393" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
+</svg>

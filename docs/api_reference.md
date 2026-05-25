@@ -1,5 +1,83 @@
 # libmucom88 API リファレンス
 
+## FmPatch（fm_common.hpp）
+
+MUCOM88形式の FM音色定義。
+
+```cpp
+struct FmPatch {
+    int patchNo;           // @番号
+    int fb;                // Feedback (0-7)
+    int al;                // Algorithm (0-7)
+    struct Op {
+        int ar, dr, sr, rr;    // ADSR レート
+        int sl, tl;             // サステインレベル、トータルレベル
+        int ks, ml, dt;         // キースケール、マルチプル、デチューン
+        int dt2, ame, ssgEg;   // OPM拡張、AM Enable、SSG-EG
+    } op[4];
+    bool isOpm;            // OPM音色フラグ
+    int pms, ams;          // OPM LFO感度
+    std::string name;      // 音色名（6文字）
+    PatchSource source;    // 出典（VoiceDat/Inline/Edited/UserBank/External）
+    bool valid;
+};
+```
+
+### voice.dat パース
+
+```cpp
+// 32バイト/エントリのMUCOM88 voice.datをパース
+FmPatch parseVoiceDatEntry(const uint8_t* data, size_t dataSize, int patchNo);
+```
+
+### 周波数変換
+
+```cpp
+// MIDIノート → YM2608 F-Number + Block
+uint16_t noteToFnum(int noteNum, int& blockOut);
+
+// MIDIノート → SSG トーンピリオド
+uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200);
+```
+
+### 定数
+
+```cpp
+// オペレータスロットオフセット（op1=+0, op2=+8, op3=+4, op4=+12）
+constexpr int kFmSlotOffset[4] = { 0, 8, 4, 12 };
+
+// アルゴリズムごとのキャリアオペレータ判定
+constexpr bool kFmCarrier[8][4] = { /* AL0-7 */ };
+```
+
+---
+
+## ChipMode
+
+```cpp
+enum class ChipMode { OPNA, OPM, OPNB };
+```
+
+MUCファイルの `#mode` ディレクティブで指定。
+現時点では `OPNA` が標準。OPM/OPNB は将来のG2モード用。
+
+---
+
+## PatchSource
+
+```cpp
+enum class PatchSource : uint8_t {
+    Unknown  = 0,
+    VoiceDat = 1,   // voice.dat から読み込み
+    Inline   = 2,   // MUCインライン定義 @N={...}
+    Edited   = 3,   // Voice Editorで編集
+    UserBank = 4,   // ユーザー保存バンク
+    External = 5,   // MUC companion voice.dat
+};
+```
+
+---
+
 ## IFmEngine（fm_engine_interface.hpp）
 
 YM2608エミュレータの抽象インターフェース。ゲーム側で実装する。
@@ -15,6 +93,7 @@ YM2608エミュレータの抽象インターフェース。ゲーム側で実�
 | `loadAdpcmRom(path)` | ADPCM-A ROM読み込み（リズム音源） |
 | `loadAdpcmRomFromMemory(data, size)` | ADPCM-A ROMメモリ読み込み |
 | `hasAdpcmRom()` | ADPCM-A ROMがロード済みか |
+| `loadPcmDataToAdpcmB(data, size)` | ADPCM-B PCMデータロード（mucompcm.binのデータ部分）。デフォルト実装はfalse返却 |
 | `loadVoiceTable(path)` | ボイステーブル読み込み |
 | `loadVoiceTableFromMemory(data, size)` | ボイステーブルメモリ読み込み |
 | `hasVoiceTable()` | ボイステーブルがロード済みか |
@@ -23,19 +102,27 @@ YM2608エミュレータの抽象インターフェース。ゲーム側で実�
 | `isVoicePlaying()` | ボイス再生中か |
 | `tickVoiceTimer(frameCount)` | ボイス再生タイマー更新 |
 | `stopAdpcmB()` | ADPCM-B強制停止（BGM + ボイス両方） |
-| `setSsgMixScale(ssgScale)` | SSGミックスレベル設定（1.0=等倍、0.71≈-3dB）。デフォルト実装は何もしない |
-| `getSsgMixScale()` | 現在のSSGスケール値（デフォルト1.0） |
-| `loadPcmDataToAdpcmB(data, size)` | ADPCM-B PCMデータロード（mucompcm.binのデータ部分）。デフォルト実装はfalse返却 |
 | `applyPatch(fmIndex, patch)` | FM音色パッチ適用（STENV互換）。KEY_OFF→SL/RR最速→全OPパラメータ→FB/ALG→PAN。デフォルト実装はwriteReg()ベース |
 | `setFrequency(fmIndex, noteNum)` | FM周波数設定。MIDIノート→F-Number/Block計算→0xA4/0xA0ラッチ。デフォルト実装はwriteReg()ベース |
 | `fmKeyOn(fmIndex)` | FM KEY ON（全スロット）。デフォルト実装はwriteReg()ベース |
 | `fmKeyOff(fmIndex)` | FM KEY OFF。デフォルト実装はwriteReg()ベース |
+| `setSsgMixScale(ssgScale)` | SSGミックスレベル設定（1.0=等倍、0.71≈-3dB）。デフォルト実装は何もしない |
+| `getSsgMixScale()` | 現在のSSGスケール値（デフォルト1.0） |
 
 ---
 
 ## MmlParser（mml_parser.hpp）
 
 MUCOM88互換MMLパーサー。MUCテキストからイベント列を生成する。
+
+### メソッド
+
+| メソッド | 説明 |
+|---------|------|
+| `MucFile parse(const std::string& muc)` | MUCテキストをパース |
+| `bool loadVoiceDat(const std::string& path)` | voice.datをファイルから読み込み |
+| `bool loadVoiceDatFromMemory(const uint8_t* data, size_t size)` | voice.datをメモリから読み込み |
+| `int findPatchByName(const std::string& name)` | 音色名で検索（@"string"用） |
 
 ### MmlParser::MucFile 構造体
 
@@ -54,15 +141,6 @@ struct MucFile {
     std::unordered_map<int, FmPatch> patches;              // @0-255
 };
 ```
-
-### メソッド
-
-| メソッド | 説明 |
-|---------|------|
-| `MucFile parse(const std::string& muc)` | MUCテキストをパース |
-| `bool loadVoiceDat(const std::string& path)` | voice.datをファイルから読み込み |
-| `bool loadVoiceDatFromMemory(const uint8_t* data, size_t size)` | voice.datをメモリから読み込み |
-| `int findPatchByName(const std::string& name)` | 音色名で検索（@"string"用） |
 
 ### MmlEvent 構造体
 
@@ -124,8 +202,14 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 | `setLoop(loop)` | ループ ON/OFF（デフォルト: false。`loadFromParseResult()` でLコマンドがあれば自動的にtrueに設定される） |
 | `setCommonEndTick(tick)` | ループ終端tickを外部指定（テスト用） |
 | `loadFromParseResult(muc)` | MucFileから音色・全音符クロック・全チャンネルイベントを一括設定 |
+
+### PCMデータ
+
+| メソッド | 説明 |
+|---------|------|
 | `loadPcmBinary(data, size)` | mucompcm.binを統合ロード（PCMテーブル + ADPCM-Bデータを内部分割） |
 | `loadPcmBinaryFile(path)` | mucompcm.binファイルを統合ロード |
+| `loadPcmData(data, size)` | mucompcm.binのPCMアドレステーブルを解析（マルチサンプル情報のみ） |
 
 ### 再生制御
 
@@ -297,87 +381,3 @@ SEボリュームは `playSe()` で発音するSE専用の音量調整。マス�
 | `isADPCMB(ch)` | ch 10 |
 | `toFMIndex(ch)` | MMLチャンネル→FMインデックス(0-5) |
 | `toSSGIndex(ch)` | MMLチャンネル→SSGインデックス(0-2) |
-
-### PCMデータ
-
-| メソッド | 説明 |
-|---------|------|
-| `loadPcmData(data, size)` | mucompcm.binのPCMアドレステーブルを解析（マルチサンプル情報のみ） |
-
----
-
-## FmPatch（fm_common.hpp）
-
-MUCOM88形式の FM音色定義。
-
-```cpp
-struct FmPatch {
-    int patchNo;           // @番号
-    int fb;                // Feedback (0-7)
-    int al;                // Algorithm (0-7)
-    struct Op {
-        int ar, dr, sr, rr;    // ADSR レート
-        int sl, tl;             // サステインレベル、トータルレベル
-        int ks, ml, dt;         // キースケール、マルチプル、デチューン
-        int dt2, ame, ssgEg;   // OPM拡張、AM Enable、SSG-EG
-    } op[4];
-    bool isOpm;            // OPM音色フラグ
-    int pms, ams;          // OPM LFO感度
-    std::string name;      // 音色名（6文字）
-    PatchSource source;    // 出典（VoiceDat/Inline/Edited/UserBank/External）
-    bool valid;
-};
-```
-
-### voice.dat パース
-
-```cpp
-// 32バイト/エントリのMUCOM88 voice.datをパース
-FmPatch parseVoiceDatEntry(const uint8_t* data, size_t dataSize, int patchNo);
-```
-
-### 周波数変換
-
-```cpp
-// MIDIノート → YM2608 F-Number + Block
-uint16_t noteToFnum(int noteNum, int& blockOut);
-
-// MIDIノート → SSG トーンピリオド
-uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200);
-```
-
-### 定数
-
-```cpp
-// オペレータスロットオフセット（op1=+0, op2=+8, op3=+4, op4=+12）
-constexpr int kFmSlotOffset[4] = { 0, 8, 4, 12 };
-
-// アルゴリズムごとのキャリアオペレータ判定
-constexpr bool kFmCarrier[8][4] = { /* AL0-7 */ };
-```
-
----
-
-## ChipMode
-
-```cpp
-enum class ChipMode { OPNA, OPM, OPNB };
-```
-
-MUCファイルの `#mode` ディレクティブで指定。
-現時点では `OPNA` が標準。OPM/OPNB は将来のG2モード用。
-
----
-
-## PatchSource
-
-```cpp
-enum class PatchSource : uint8_t {
-    Unknown  = 0,
-    VoiceDat = 1,   // voice.dat から読み込み
-    Inline   = 2,   // MUCインライン定義 @N={...}
-    Edited   = 3,   // Voice Editorで編集
-    UserBank = 4,   // ユーザー保存バンク
-    External = 5,   // MUC companion voice.dat
-};
-```

@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arr-g" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#2E7D32"/>
+    </marker>
+    <marker id="arr-o" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#E65100"/>
+    </marker>
+    <marker id="arr-d" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#455A64"/>
+    </marker>
+    <marker id="arr-b" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#1565C0"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="520" fill="#FAFBFC" rx="6"/>
+
+  <!-- Title -->
+  <text x="360" y="28" text-anchor="middle" font-size="15" font-weight="600" fill="#263238" letter-spacing="0.5">Rich Mode -- Dual YM2608 Architecture</text>
+  <line x1="180" y1="38" x2="540" y2="38" stroke="#CFD8DC" stroke-width="0.5"/>
+
+  <!-- ==================== MmlEngine ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="55" width="260" height="36" rx="8" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.2"/>
+  </g>
+  <text x="190" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#0D47A1">MmlEngine (BGM)</text>
+  <rect x="65" y="59" width="56" height="13" rx="6" fill="#1565C0"/>
+  <text x="93" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">BGM</text>
+
+  <!-- Game Code -->
+  <g filter="url(#shadow)">
+    <rect x="400" y="55" width="260" height="36" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.2"/>
+  </g>
+  <text x="530" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#E65100">Game Code (playSe)</text>
+  <rect x="405" y="59" width="56" height="13" rx="6" fill="#E65100"/>
+  <text x="433" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SE</text>
+
+  <!-- Arrows down -->
+  <line x1="190" y1="91" x2="190" y2="118" stroke="#2E7D32" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <line x1="530" y1="91" x2="530" y2="118" stroke="#E65100" stroke-width="1.5" marker-end="url(#arr-o)"/>
+
+  <!-- ==================== BGM Chip (Left) ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="120" width="300" height="250" rx="10" fill="#FFF" stroke="#A5D6A7" stroke-width="1.5"/>
+  </g>
+  <text x="190" y="145" text-anchor="middle" font-size="12" font-weight="700" fill="#1B5E20">YM2608 #1 (BGM)</text>
+  <rect x="45" y="124" width="56" height="13" rx="6" fill="#2E7D32"/>
+  <text x="73" y="134" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">BGM</text>
+  <line x1="55" y1="155" x2="325" y2="155" stroke="#C8E6C9" stroke-width="1"/>
+
+  <!-- FM port 0 -->
+  <text x="65" y="175" font-size="8.5" font-weight="600" fill="#78909C">FM (port 0)</text>
+  <rect x="55" y="182" width="62" height="26" rx="5" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="0.8"/>
+  <text x="86" y="199" text-anchor="middle" font-size="9" fill="#2E7D32">A</text>
+  <rect x="123" y="182" width="62" height="26" rx="5" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="0.8"/>
+  <text x="154" y="199" text-anchor="middle" font-size="9" fill="#2E7D32">B</text>
+  <rect x="191" y="182" width="62" height="26" rx="5" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="0.8"/>
+  <text x="222" y="199" text-anchor="middle" font-size="9" fill="#2E7D32">C</text>
+
+  <!-- SSG -->
+  <text x="65" y="225" font-size="8.5" font-weight="600" fill="#78909C">SSG</text>
+  <rect x="55" y="232" width="62" height="26" rx="5" fill="#E3F2FD" stroke="#90CAF9" stroke-width="0.8"/>
+  <text x="86" y="249" text-anchor="middle" font-size="9" fill="#1565C0">D</text>
+  <rect x="123" y="232" width="62" height="26" rx="5" fill="#E3F2FD" stroke="#90CAF9" stroke-width="0.8"/>
+  <text x="154" y="249" text-anchor="middle" font-size="9" fill="#1565C0">E</text>
+  <rect x="191" y="232" width="62" height="26" rx="5" fill="#E3F2FD" stroke="#90CAF9" stroke-width="0.8"/>
+  <text x="222" y="249" text-anchor="middle" font-size="9" fill="#1565C0">F</text>
+
+  <!-- Rhythm + ADPCM-B + FM port 1 -->
+  <text x="65" y="275" font-size="8.5" font-weight="600" fill="#78909C">Others</text>
+  <rect x="55" y="282" width="62" height="26" rx="5" fill="#F3E5F5" stroke="#CE93D8" stroke-width="0.8"/>
+  <text x="86" y="299" text-anchor="middle" font-size="9" fill="#7B1FA2">G</text>
+  <rect x="123" y="282" width="62" height="26" rx="5" fill="#F3E5F5" stroke="#CE93D8" stroke-width="0.8"/>
+  <text x="154" y="299" text-anchor="middle" font-size="9" fill="#7B1FA2">K</text>
+
+  <!-- FM port 1 -->
+  <text x="65" y="325" font-size="8.5" font-weight="600" fill="#78909C">FM (port 1)</text>
+  <rect x="55" y="332" width="62" height="26" rx="5" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="0.8"/>
+  <text x="86" y="349" text-anchor="middle" font-size="9" fill="#2E7D32">H</text>
+  <rect x="123" y="332" width="62" height="26" rx="5" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="0.8"/>
+  <text x="154" y="349" text-anchor="middle" font-size="9" fill="#2E7D32">I</text>
+  <rect x="191" y="332" width="62" height="26" rx="5" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="0.8"/>
+  <text x="222" y="349" text-anchor="middle" font-size="9" fill="#2E7D32">J</text>
+
+  <!-- ALL 11ch badge -->
+  <rect x="270" y="335" width="60" height="16" rx="8" fill="#2E7D32"/>
+  <text x="300" y="347" text-anchor="middle" font-size="7" font-weight="600" fill="#FFF">ALL 11ch</text>
+
+  <!-- ==================== SE Chip (Right) ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="380" y="120" width="300" height="250" rx="10" fill="#FFF" stroke="#FFB74D" stroke-width="1.5"/>
+  </g>
+  <text x="530" y="145" text-anchor="middle" font-size="12" font-weight="700" fill="#E65100">YM2608 #2 (SE)</text>
+  <rect x="385" y="124" width="56" height="13" rx="6" fill="#E65100"/>
+  <text x="413" y="134" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SE</text>
+  <line x1="395" y1="155" x2="665" y2="155" stroke="#FFE0B2" stroke-width="1"/>
+
+  <!-- SE FM slots -->
+  <text x="405" y="175" font-size="8.5" font-weight="600" fill="#78909C">FM 6ch (SE dedicated)</text>
+  <rect x="395" y="182" width="82" height="32" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+  <text x="436" y="202" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">Slot 0</text>
+  <rect x="483" y="182" width="82" height="32" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+  <text x="524" y="202" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">Slot 1</text>
+  <rect x="571" y="182" width="82" height="32" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+  <text x="612" y="202" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">Slot 2</text>
+
+  <rect x="395" y="222" width="82" height="32" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+  <text x="436" y="242" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">Slot 3</text>
+  <rect x="483" y="222" width="82" height="32" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+  <text x="524" y="242" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">Slot 4</text>
+  <rect x="571" y="222" width="82" height="32" rx="5" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+  <text x="612" y="242" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">Slot 5</text>
+
+  <!-- Unused channels (grayed out) -->
+  <text x="405" y="280" font-size="8.5" font-weight="600" fill="#BDBDBD">Unused</text>
+  <rect x="395" y="288" width="82" height="24" rx="5" fill="#FAFAFA" stroke="#E0E0E0" stroke-width="0.8" stroke-dasharray="4,3"/>
+  <text x="436" y="304" text-anchor="middle" font-size="8" fill="#BDBDBD">SSG</text>
+  <rect x="483" y="288" width="82" height="24" rx="5" fill="#FAFAFA" stroke="#E0E0E0" stroke-width="0.8" stroke-dasharray="4,3"/>
+  <text x="524" y="304" text-anchor="middle" font-size="8" fill="#BDBDBD">Rhythm</text>
+  <rect x="571" y="288" width="82" height="24" rx="5" fill="#FAFAFA" stroke="#E0E0E0" stroke-width="0.8" stroke-dasharray="4,3"/>
+  <text x="612" y="304" text-anchor="middle" font-size="8" fill="#BDBDBD">ADPCM-B</text>
+
+  <!-- Benefits -->
+  <text x="405" y="340" font-size="9" font-weight="600" fill="#2E7D32">Advantages:</text>
+  <text x="410" y="356" font-size="8.5" fill="#37474F">- BGM channels unaffected</text>
+  <text x="410" y="370" font-size="8.5" fill="#37474F">- 6 simultaneous SE</text>
+
+  <!-- ==================== renderMixed() ==================== -->
+  <!-- Arrows from both chips -->
+  <line x1="190" y1="370" x2="190" y2="420" stroke="#2E7D32" stroke-width="1.5"/>
+  <line x1="530" y1="370" x2="530" y2="420" stroke="#E65100" stroke-width="1.5"/>
+
+  <!-- Merge point -->
+  <line x1="190" y1="420" x2="360" y2="440" stroke="#455A64" stroke-width="1.5"/>
+  <line x1="530" y1="420" x2="360" y2="440" stroke="#455A64" stroke-width="1.5"/>
+
+  <!-- renderMixed box -->
+  <g filter="url(#shadow)">
+    <rect x="260" y="445" width="200" height="36" rx="8" fill="#ECEFF1" stroke="#B0BEC5" stroke-width="1.2"/>
+  </g>
+  <text x="360" y="468" text-anchor="middle" font-size="11" font-weight="600" fill="#37474F">renderMixed()</text>
+  <line x1="360" y1="440" x2="360" y2="445" stroke="#455A64" stroke-width="1.5" marker-end="url(#arr-d)"/>
+
+  <!-- Labels on merge lines -->
+  <text x="255" y="415" font-size="8" fill="#2E7D32">BGM PCM</text>
+  <text x="440" y="415" font-size="8" fill="#E65100">SE PCM</text>
+
+  <!-- Mix label -->
+  <rect x="480" y="450" width="100" height="16" rx="8" fill="#1565C0"/>
+  <text x="530" y="462" text-anchor="middle" font-size="7.5" font-weight="600" fill="#FFF">Stereo Mix Out</text>
+
+  <text x="700" y="513" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
+</svg>

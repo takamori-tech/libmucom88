@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arr-g" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#2E7D32"/>
+    </marker>
+    <marker id="arr-o" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#E65100"/>
+    </marker>
+    <marker id="arr-r" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#C62828"/>
+    </marker>
+    <marker id="arr-d" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#455A64"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="480" fill="#FAFBFC" rx="6"/>
+
+  <!-- Title -->
+  <text x="360" y="28" text-anchor="middle" font-size="15" font-weight="600" fill="#263238" letter-spacing="0.5">Classic Mode -- Single YM2608 Shared</text>
+  <line x1="180" y1="38" x2="540" y2="38" stroke="#CFD8DC" stroke-width="0.5"/>
+
+  <!-- ==================== MmlEngine ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="55" width="260" height="36" rx="8" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.2"/>
+  </g>
+  <text x="190" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#0D47A1">MmlEngine (BGM)</text>
+  <rect x="65" y="59" width="56" height="13" rx="6" fill="#1565C0"/>
+  <text x="93" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">BGM</text>
+
+  <!-- Game Code -->
+  <g filter="url(#shadow)">
+    <rect x="400" y="55" width="260" height="36" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.2"/>
+  </g>
+  <text x="530" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#E65100">Game Code (playSe)</text>
+  <rect x="405" y="59" width="56" height="13" rx="6" fill="#E65100"/>
+  <text x="433" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SE</text>
+
+  <!-- Arrows down -->
+  <line x1="190" y1="91" x2="190" y2="128" stroke="#1565C0" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <line x1="530" y1="91" x2="530" y2="128" stroke="#E65100" stroke-width="1.5" marker-end="url(#arr-o)"/>
+
+  <!-- ==================== YM2608 Chip ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="130" width="600" height="260" rx="10" fill="#FFF" stroke="#B0BEC5" stroke-width="1.5"/>
+  </g>
+  <text x="360" y="155" text-anchor="middle" font-size="13" font-weight="700" fill="#37474F">YM2608 (OPNA) -- 1 Chip</text>
+  <rect x="65" y="134" width="72" height="13" rx="6" fill="#455A64"/>
+  <text x="101" y="144" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SHARED</text>
+  <line x1="80" y1="165" x2="640" y2="165" stroke="#ECEFF1" stroke-width="1"/>
+
+  <!-- FM Channels (port 0) -->
+  <text x="90" y="185" font-size="9" font-weight="600" fill="#78909C">FM (port 0)</text>
+  <g filter="url(#shadow)">
+    <rect x="80" y="195" width="80" height="32" rx="6" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1"/>
+  </g>
+  <text x="120" y="215" text-anchor="middle" font-size="10" fill="#2E7D32">A (ch1)</text>
+  <g filter="url(#shadow)">
+    <rect x="170" y="195" width="80" height="32" rx="6" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1"/>
+  </g>
+  <text x="210" y="215" text-anchor="middle" font-size="10" fill="#2E7D32">B (ch2)</text>
+  <g filter="url(#shadow)">
+    <rect x="260" y="195" width="80" height="32" rx="6" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1"/>
+  </g>
+  <text x="300" y="215" text-anchor="middle" font-size="10" fill="#2E7D32">C (ch3)</text>
+
+  <!-- SSG Channels -->
+  <text x="90" y="250" font-size="9" font-weight="600" fill="#78909C">SSG</text>
+  <g filter="url(#shadow)">
+    <rect x="80" y="260" width="80" height="32" rx="6" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1"/>
+  </g>
+  <text x="120" y="280" text-anchor="middle" font-size="10" fill="#1565C0">D</text>
+  <g filter="url(#shadow)">
+    <rect x="170" y="260" width="80" height="32" rx="6" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1"/>
+  </g>
+  <text x="210" y="280" text-anchor="middle" font-size="10" fill="#1565C0">E</text>
+  <g filter="url(#shadow)">
+    <rect x="260" y="260" width="80" height="32" rx="6" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1"/>
+  </g>
+  <text x="300" y="280" text-anchor="middle" font-size="10" fill="#1565C0">F</text>
+
+  <!-- Rhythm + ADPCM-B -->
+  <text x="90" y="315" font-size="9" font-weight="600" fill="#78909C">Rhythm / ADPCM-B</text>
+  <g filter="url(#shadow)">
+    <rect x="80" y="325" width="120" height="32" rx="6" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1"/>
+  </g>
+  <text x="140" y="345" text-anchor="middle" font-size="10" fill="#7B1FA2">G (Rhythm)</text>
+  <g filter="url(#shadow)">
+    <rect x="210" y="325" width="130" height="32" rx="6" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1"/>
+  </g>
+  <text x="275" y="345" text-anchor="middle" font-size="10" fill="#7B1FA2">K (ADPCM-B)</text>
+
+  <!-- FM Channels (port 1) - these get hijacked -->
+  <text x="430" y="185" font-size="9" font-weight="600" fill="#78909C">FM (port 1)</text>
+
+  <!-- H - normal BGM -->
+  <g filter="url(#shadow)">
+    <rect x="420" y="195" width="80" height="32" rx="6" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1"/>
+  </g>
+  <text x="460" y="215" text-anchor="middle" font-size="10" fill="#2E7D32">H (ch4)</text>
+
+  <!-- I - hijacked -->
+  <g filter="url(#shadow)">
+    <rect x="510" y="195" width="80" height="32" rx="6" fill="#FFEBEE" stroke="#EF9A9A" stroke-width="1.5"/>
+  </g>
+  <text x="550" y="215" text-anchor="middle" font-size="10" font-weight="600" fill="#C62828">I (ch5)</text>
+  <rect x="560" y="199" width="26" height="11" rx="5" fill="#C62828"/>
+  <text x="573" y="208" text-anchor="middle" font-size="5.5" font-weight="600" fill="#FFF">SE</text>
+
+  <!-- J - hijacked -->
+  <g filter="url(#shadow)">
+    <rect x="600" y="195" width="48" height="32" rx="6" fill="#FFEBEE" stroke="#EF9A9A" stroke-width="1.5"/>
+  </g>
+  <text x="624" y="215" text-anchor="middle" font-size="10" font-weight="600" fill="#C62828">J</text>
+  <rect x="618" y="199" width="26" height="11" rx="5" fill="#C62828"/>
+  <text x="631" y="208" text-anchor="middle" font-size="5.5" font-weight="600" fill="#FFF">SE</text>
+
+  <!-- Hijack arrow from Game Code to I,J -->
+  <path d="M530,128 L530,150 L550,150 L550,195" fill="none" stroke="#C62828" stroke-width="1.5" marker-end="url(#arr-r)"/>
+  <path d="M530,150 L624,150 L624,195" fill="none" stroke="#C62828" stroke-width="1.5" marker-end="url(#arr-r)"/>
+  <text x="560" y="146" font-size="7.5" fill="#C62828" font-weight="600">hijack</text>
+
+  <!-- BGM arrow to normal channels -->
+  <path d="M190,128 L190,195" fill="none" stroke="#2E7D32" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- Output -->
+  <g filter="url(#shadow)">
+    <rect x="240" y="410" width="240" height="36" rx="8" fill="#ECEFF1" stroke="#B0BEC5" stroke-width="1.2"/>
+  </g>
+  <text x="360" y="433" text-anchor="middle" font-size="11" font-weight="600" fill="#37474F">Stereo PCM Output</text>
+  <line x1="360" y1="390" x2="360" y2="410" stroke="#455A64" stroke-width="1.5" marker-end="url(#arr-d)"/>
+
+  <!-- Legend -->
+  <rect x="420" y="270" width="12" height="12" rx="3" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1"/>
+  <text x="438" y="280" font-size="8" fill="#546E7A">BGM</text>
+  <rect x="490" y="270" width="12" height="12" rx="3" fill="#FFEBEE" stroke="#EF9A9A" stroke-width="1"/>
+  <text x="508" y="280" font-size="8" fill="#546E7A">SE (hijacked)</text>
+
+  <!-- Note -->
+  <text x="420" y="305" font-size="8" fill="#78909C">SE plays on hijacked BGM channels</text>
+  <text x="420" y="318" font-size="8" fill="#78909C">BGM note suppressed during SE</text>
+
+  <text x="700" y="473" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
+</svg>
