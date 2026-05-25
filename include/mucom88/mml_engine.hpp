@@ -179,6 +179,13 @@ public:
         m_globalAtt = m_masterAtt;
         stopAllSe();
         m_seAllocCounter = 0;
+        // ADPCM-B エンジンレベル状態リセット
+        m_pcmVolMode    = 0;
+        m_pcmAddVol     = 0;
+        m_pcmCurrentNum = 0;
+        m_pcmPan        = 0xC0;
+        // リズム全体TLリセット（前曲のvコマンド残留防止）
+        m_rhythmTL      = 0x3F;
 
         // 全チャンネルのランタイム状態をフルリセット（libmucom88-mml#2）
         // イベント列(events)は保持し、再生位置とランタイム状態のみ初期化
@@ -307,11 +314,32 @@ public:
     void resume()
     {
         if (m_engine) {
+            // allSoundOff()がm_ssgMixerを0x3Fに上書きするため事前に退避
+            uint8_t savedMixer = m_ssgMixer;
             allSoundOff();
+            m_ssgMixer = savedMixer;
+            // FM: 音色 + 音量 + PAN
             for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
-                if (m_channels[fmMmlCh(fi)].hijacked) continue;
+                int ch = fmMmlCh(fi);
+                if (m_channels[ch].hijacked) continue;
                 fmApplyPatch(fi, m_fmPatchNo[fi]);
-                fmSetVolume(fi, m_channels[fmMmlCh(fi)].volume);
+                fmSetVolume(fi, m_channels[ch].volume);
+                int port = fmPort(fi);
+                int off  = fmOffset(fi);
+                m_engine->writeReg(port, 0xB4 + off,
+                    (uint8_t)(panToReg(m_channels[ch].pan)));
+            }
+            // SSG: ミキサー復元
+            m_engine->writeReg(0, 0x07, m_ssgMixer);
+            // リズム: TL + IL復元
+            int rhythmAtt = m_globalAtt * 63 / 127;
+            int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
+            m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
+            for (int i = 0; i < 6; i++)
+                m_engine->writeReg(0, 0x18 + i, m_rhythmIL[i]);
+            // ADPCM-B: ボリューム復元（ボイス再生中はスキップ）
+            if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
+                adpcmbSetVolume(m_channels[10].volume);
             }
         }
         m_playing = true;
@@ -1200,8 +1228,10 @@ public:
             }
         }
         m_engine->writeReg(0, 0x07, m_ssgMixer);
-        // ADPCM-B: フェード/ダッキング反映ボリュームを復元
-        adpcmbSetVolume(m_channels[10].volume);
+        // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
+        if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
+            adpcmbSetVolume(m_channels[10].volume);
+        }
 
         // per-channel独立ループの初期化（Issue #62/#68）
         // 初回のglobalLoopRestartで全チャンネル一斉に巻き戻した後、
@@ -1371,7 +1401,9 @@ public:
                 m_engine->writeReg(0, 0x07, m_ssgMixer);
             }
             if (isADPCMB(ch)) {
-                adpcmbSetVolume(st.volume);
+                if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
+                    adpcmbSetVolume(st.volume);
+                }
             }
         }
 
@@ -2130,6 +2162,10 @@ private:
             m_engine->writeReg(0, 0x08 + i, 0x00);
         // リズム全停止（Dump bit=1）
         m_engine->writeReg(0, 0x10, 0x80 | 0x3F);
+        // ADPCM-B: ボイス再生中はスキップ（ボイスはplayVoice()で独立管理）
+        if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
+            adpcmbKeyOff();
+        }
     }
 
     // フェードアウト完了時の自動アクション実行
