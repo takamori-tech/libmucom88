@@ -373,6 +373,73 @@ for (int ch : {9, 8, 7, 2, 1, 0}) {  // J,I,H,C,B,A の優先順
 if (bestCh >= 0) engine.hijackChannel(bestCh);
 ```
 
+## 効果音再生（統合SE API / Richモード）
+
+`playSe()` を使うと、Classic/Richどちらのモードでも同じコードでSE再生ができる。
+Classicモードでは内部でhijackChannelを使用し、RichモードではSE専用チップのFM 6chに割り当てる。
+
+### Richモードのセットアップ
+
+```cpp
+// SE専用チップの作成・初期化（BGMチップと同じクラス）
+MyFmEngine seEngine;
+seEngine.init(44100);
+
+// Richモードに切り替え（デフォルトはClassic）
+engine.setSeMode(MmlEngine::SeMode::Rich, &seEngine);
+```
+
+### SE発音
+
+```cpp
+// SE用の音色を定義（voice.datから読み込みまたは直接構築）
+FmPatch explosionPatch = ...;  // @番号ではなくFmPatch実体を渡す
+
+// SE発音（両モード共通API）
+// 戻り値: SEスロット番号(0-5)、-1=割り当て失敗
+int slot = engine.playSe(explosionPatch, 60);          // C4, velocity=15
+int slot2 = engine.playSe(laserPatch, 72, 12);         // C5, velocity=12
+int slot3 = engine.playSe(hitPatch, 48, 15, 200);      // C3, 200ms後に自動停止
+
+// SE停止（手動）
+engine.stopSe(slot);
+
+// 全SE停止
+engine.stopAllSe();
+
+// SE状態確認
+bool active = engine.isSeActive(slot);
+int count = engine.activeSeCount();
+```
+
+### オーディオコールバック（renderMixed使用）
+
+Richモードでは `renderMixed()` を使うと、BGMチップとSEチップの出力が自動的にミキシングされる。
+Classicモードでも使用可能（SEチップ出力なし）。
+
+```cpp
+void audioCallback(void* userdata, uint8_t* stream, int len) {
+    auto* bgm = static_cast<BgmPlayer*>(userdata);
+    int16_t* out = reinterpret_cast<int16_t*>(stream);
+    uint32_t frameCount = len / (2 * sizeof(int16_t));
+
+    // BGM + SE を一括レンダリング（16サンプル単位で内部処理）
+    engine.renderMixed(out, frameCount);
+}
+```
+
+### ボイスアロケーション
+
+- Richモード: SEチップのFM 6chに最大6音同時発音
+- 全スロット使用中に `playSe()` を呼ぶと、最も古いSEを停止して再割り当て（oldest策略）
+- Classicモード: BGMのFMチャンネル（J,I,H,C,B,A優先）をhijack。ノートオフ中のチャンネルを優先選択
+
+### SE音量
+
+- マスターボリューム（`setMasterVolume()`）はSEにも適用される
+- フェード（`fadeOut()`/`fadeIn()`）はBGM専用。SEには影響しない
+- ダッキング（`setDucking()`）はBGM専用。SEには影響しない
+
 ## チャンネル状態の取得（UI表示用）
 
 ```cpp

@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -67,6 +68,11 @@ public:
         Releasing   // ボイス終了、ダッキングリリース中（音量徐々に復帰）
     };
 
+    // ── SE再生モード ──────────────────────────────────────
+    // Classic: BGMチャンネルをハイジャックしてSE再生（従来方式）
+    // Rich: 専用SEチップ（2台目のIFmEngine）でSE再生（BGMチャンネル不使用）
+    enum class SeMode { Classic, Rich };
+
     MmlEngine() : m_engine(nullptr), m_sampleRate(44100), m_chipClock(7987200), m_playing(false) {}
 
     // ── チャンネル種別判定 ────────────────────────────────
@@ -91,6 +97,8 @@ public:
         m_ssgMixer   = 0x3F;  // 全SSGトーン・ノイズ無効
         m_rhythmMask = 0;
         m_patchMap[0] = makeDefaultPatch(0);
+        for (auto& slot : m_seSlots) slot = SeSlot{};
+        m_seAllocCounter = 0;
     }
 
     // ── MML イベント列を直接セット（MucFile用）─────────
@@ -157,6 +165,8 @@ public:
         m_duckAtt  = 0;
         m_fading   = false;
         m_globalAtt = m_masterAtt;
+        stopAllSe();
+        m_seAllocCounter = 0;
 
         // 全チャンネルのランタイム状態をフルリセット（libmucom88-mml#2）
         // イベント列(events)は保持し、再生位置とランタイム状態のみ初期化
@@ -270,6 +280,7 @@ public:
         m_duckAtt = 0;
         m_fading  = false;
         m_globalAtt = m_masterAtt;
+        stopAllSe();
         if (m_engine) allSoundOff();
     }
 
@@ -451,6 +462,82 @@ public:
         }
     }
 
+    // ── SEモード設定 ──────────────────────────────────────
+    // Classic: BGMチャンネルをハイジャックしてSE再生（デフォルト、後方互換）
+    // Rich: 専用SEチップ（seEngine）でSE再生。seEngineはinit()済みであること。
+    // 切り替え時に全SE停止。再生中でも呼び出し可能。
+    void setSeMode(SeMode mode, IFmEngine* seEngine = nullptr)
+    {
+        stopAllSe();
+        m_seMode = mode;
+        if (mode == SeMode::Rich) {
+            m_seEngine = seEngine;
+            if (m_seEngine) {
+                m_seEngine->reset();
+                for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
+                    int port = fmPort(fi);
+                    int off  = fmOffset(fi);
+                    m_seEngine->writeReg(port, 0xB4 + off, 0xC0);
+                }
+                m_seEngine->writeReg(0, 0x07, 0x3F);
+                m_seEngine->writeReg(0, 0x27, 0x3A);
+            }
+        } else {
+            m_seEngine = nullptr;
+        }
+    }
+    SeMode seMode() const { return m_seMode; }
+
+    // ── 統合SE再生 ─────────────────────────────────────
+    // Classic: BGMのFMチャンネルをハイジャックして再生
+    // Rich: SEチップのFMチャンネルに割り当てて再生
+    // patch: FM音色, noteNum: MIDIノート番号, velocity: 音量(0-15)
+    // durationMs: 自動停止時間(ミリ秒)。0=手動停止のみ
+    // 戻り値: SEスロット番号(0-5)。割り当て失敗時は -1
+    int playSe(const FmPatch& patch, int noteNum, int velocity = 15, int durationMs = 0)
+    {
+        if (m_seMode == SeMode::Rich)
+            return playSeRich(patch, noteNum, velocity, durationMs);
+        else
+            return playSeClassic(patch, noteNum, velocity, durationMs);
+    }
+
+    void stopSe(int seSlot)
+    {
+        if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
+        auto& slot = m_seSlots[seSlot];
+        if (!slot.active) return;
+
+        if (m_seMode == SeMode::Rich) {
+            if (m_seEngine) m_seEngine->fmKeyOff(slot.fmIndex);
+        } else {
+            if (slot.mmlCh >= 0) {
+                if (m_engine) fmKeyOff(toFMIndex(slot.mmlCh));
+                releaseChannel(slot.mmlCh);
+            }
+        }
+        slot = SeSlot{};
+    }
+
+    void stopAllSe()
+    {
+        for (int i = 0; i < MAX_SE_SLOTS; i++)
+            stopSe(i);
+    }
+
+    bool isSeActive(int seSlot) const
+    {
+        return (seSlot >= 0 && seSlot < MAX_SE_SLOTS) ? m_seSlots[seSlot].active : false;
+    }
+
+    int activeSeCount() const
+    {
+        int n = 0;
+        for (const auto& slot : m_seSlots)
+            if (slot.active) n++;
+        return n;
+    }
+
     // ── ダッキング設定 ───────────────────────────────────
     // ボイス再生中にFM/SSGの音量を自動減衰する。
     // attTarget: FM TL加算値（0=無効、20≈-15dB）。SSGはatt/4で換算。
@@ -478,6 +565,7 @@ public:
     void setMasterVolume(float vol) {
         m_masterAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
         recalcGlobalAtt();
+        seRecalcVolume();
     }
     float getMasterVolume() const {
         return 1.0f - (float)m_masterAtt / 127.0f;
@@ -776,6 +864,39 @@ public:
                 }
             }
             if (allDone) stop();
+        }
+    }
+
+    // ── 混合レンダリング（BGM + SE）──────────────────────
+    // advance() + tickVoiceTimer() + SE duration追跡 + 両チップPCM生成 + ミキシング。
+    // 16サンプル単位で処理（OpenMUCOM88互換タイミング）。
+    // ClassicモードでもRichモードでも使用可能。
+    void renderMixed(int16_t* out, uint32_t frameCount)
+    {
+        uint32_t remaining = frameCount;
+        uint32_t offset = 0;
+        while (remaining > 0) {
+            uint32_t n = std::min(remaining, (uint32_t)16);
+            advance(n);
+            tickVoiceTimer(n);
+            seTickDuration(n);
+
+            int16_t bgmBuf[32] = {};
+            if (m_engine)
+                m_engine->generateInterleaved(bgmBuf, n);
+
+            if (m_seMode == SeMode::Rich && m_seEngine) {
+                int16_t seBuf[32] = {};
+                m_seEngine->generateInterleaved(seBuf, n);
+                for (uint32_t i = 0; i < n * 2; i++) {
+                    int32_t mixed = (int32_t)bgmBuf[i] + (int32_t)seBuf[i];
+                    out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
+                }
+            } else {
+                std::memcpy(out + offset * 2, bgmBuf, n * 2 * sizeof(int16_t));
+            }
+            offset += n;
+            remaining -= n;
         }
     }
 
@@ -1216,6 +1337,19 @@ private:
         bool     hijacked       = false;
     };
 
+    // ── SEスロット状態 ─────────────────────────────────
+    struct SeSlot {
+        bool     active         = false;   // スロット使用中
+        uint32_t allocOrder     = 0;       // 割り当て順序（oldest判定用、単調増加）
+        int      fmIndex        = -1;      // SEチップ上のFMインデックス (0-5)
+        int      mmlCh          = -1;      // Classicモード: ハイジャック中のMMLチャンネル (-1=Rich)
+        uint32_t durationSamples = 0;      // 自動停止までのサンプル数 (0=手動のみ)
+        uint32_t samplesLeft    = 0;       // 残りサンプル数
+        FmPatch  patch;                    // SE再生中の音色（TL再計算用）
+        int      noteNum        = 0;       // 再生中のノート番号
+        int      velocity       = 15;      // ベロシティ (0-15)
+    };
+
     IFmEngine*  m_engine;
     uint32_t    m_sampleRate;
     uint32_t    m_chipClock;  // YM2608マスタークロック（Issue #22）
@@ -1266,6 +1400,12 @@ private:
     int         m_duckAttTarget = 20;    // 減衰量（FM TL加算値、20≈-15dB）
     uint32_t    m_duckReleaseSamples = 0;     // リリース時間（サンプル数）
     uint32_t    m_duckReleaseSamplesLeft = 0;  // リリース残りサンプル数（オーディオスレッドのみ更新）
+    // ── SE（効果音）再生 ────────────────────────────────
+    static constexpr int MAX_SE_SLOTS = 6;
+    std::array<SeSlot, MAX_SE_SLOTS> m_seSlots;
+    IFmEngine*  m_seEngine       = nullptr;   // Richモード: SE専用チップ
+    SeMode      m_seMode         = SeMode::Classic;
+    uint32_t    m_seAllocCounter = 0;         // スロット割り当て順序（単調増加）
     int         m_pcmVolMode = 0;     // PVMODE: 0=IX+6のみ使用, 1=IX+6+IX+7
     int         m_pcmAddVol  = 0;     // ADPCM-B追加音量（PVMODE=1時のIX+7、V1→v設定）
 
@@ -2431,6 +2571,142 @@ private:
         if (finalVol > 250) finalVol = 250;
         if (finalVol < 0) finalVol = 0;
         m_engine->writeReg(1, 0x0B, (uint8_t)finalVol);
+    }
+
+    // =====================================================================
+    // SE（効果音）ドライバー
+    // =====================================================================
+
+    // 指定エンジンのキャリアTLを書き込む（SE用、m_patchMap/m_globalAtt非依存）
+    void seWriteCarrierTL(IFmEngine* engine, int fi, int al, int tl)
+    {
+        if (!engine) return;
+        int port = fmPort(fi);
+        int off  = fmOffset(fi);
+        for (int oi = 0; oi < 4; oi++) {
+            int so = carrierOffsets[al & 7][oi];
+            if (so < 0) break;
+            engine->writeReg(port, 0x40 + so + off, (uint8_t)std::clamp(tl, 0, 127));
+        }
+    }
+
+    // SEスロット割り当て（oldest策略）
+    int seAllocSlot()
+    {
+        for (int i = 0; i < MAX_SE_SLOTS; i++) {
+            if (!m_seSlots[i].active) return i;
+        }
+        // 全スロット使用中 → 最古を奪う
+        int oldest = 0;
+        uint32_t oldestOrder = m_seSlots[0].allocOrder;
+        for (int i = 1; i < MAX_SE_SLOTS; i++) {
+            if (m_seSlots[i].allocOrder < oldestOrder) {
+                oldest = i;
+                oldestOrder = m_seSlots[i].allocOrder;
+            }
+        }
+        stopSe(oldest);
+        return oldest;
+    }
+
+    // SE発音共通処理（指定エンジンに対して音色適用→周波数→キーオン）
+    void seApplyAndKeyOn(IFmEngine* engine, int fi, const FmPatch& patch, int noteNum, int velocity)
+    {
+        if (!engine) return;
+        engine->applyPatch(fi, patch);
+        int tlBase = fmvdatLookup(velocity);
+        int tl = std::clamp(tlBase + m_masterAtt, 0, 127);
+        seWriteCarrierTL(engine, fi, patch.al, tl);
+        engine->setFrequency(fi, noteNum);
+        engine->fmKeyOn(fi);
+    }
+
+    // Classic SE: BGMチャンネルハイジャック方式
+    int playSeClassic(const FmPatch& patch, int noteNum, int velocity, int durationMs)
+    {
+        int slotIdx = seAllocSlot();
+
+        // BGM FMチャンネル選択（J,I,H,C,B,A優先、ノートオフ中を優先）
+        static const int fmChOrder[] = {9, 8, 7, 2, 1, 0};
+        int bestCh = -1;
+        for (int ch : fmChOrder) {
+            if (isChannelHijacked(ch)) continue;
+            bool usedBySe = false;
+            for (const auto& s : m_seSlots) {
+                if (s.active && s.mmlCh == ch) { usedBySe = true; break; }
+            }
+            if (usedBySe) continue;
+            if (!m_channels[ch].noteOn) { bestCh = ch; break; }
+            if (bestCh < 0) bestCh = ch;
+        }
+        if (bestCh < 0) return -1;
+
+        hijackChannel(bestCh);
+        int fi = toFMIndex(bestCh);
+        seApplyAndKeyOn(m_engine, fi, patch, noteNum, velocity);
+
+        auto& slot = m_seSlots[slotIdx];
+        slot.active = true;
+        slot.allocOrder = m_seAllocCounter++;
+        slot.fmIndex = fi;
+        slot.mmlCh = bestCh;
+        slot.patch = patch;
+        slot.noteNum = noteNum;
+        slot.velocity = velocity;
+        slot.durationSamples = (durationMs > 0) ? (uint32_t)((uint64_t)durationMs * m_sampleRate / 1000) : 0;
+        slot.samplesLeft = slot.durationSamples;
+        return slotIdx;
+    }
+
+    // Rich SE: SE専用チップ方式
+    int playSeRich(const FmPatch& patch, int noteNum, int velocity, int durationMs)
+    {
+        if (!m_seEngine) return -1;
+        int slotIdx = seAllocSlot();
+        int fi = slotIdx;  // Rich: スロット番号 = FMインデックス（1:1対応）
+
+        auto& slot = m_seSlots[slotIdx];
+        if (slot.active) m_seEngine->fmKeyOff(slot.fmIndex);
+
+        seApplyAndKeyOn(m_seEngine, fi, patch, noteNum, velocity);
+
+        slot.active = true;
+        slot.allocOrder = m_seAllocCounter++;
+        slot.fmIndex = fi;
+        slot.mmlCh = -1;
+        slot.patch = patch;
+        slot.noteNum = noteNum;
+        slot.velocity = velocity;
+        slot.durationSamples = (durationMs > 0) ? (uint32_t)((uint64_t)durationMs * m_sampleRate / 1000) : 0;
+        slot.samplesLeft = slot.durationSamples;
+        return slotIdx;
+    }
+
+    // SE duration自動停止処理
+    void seTickDuration(uint32_t frameCount)
+    {
+        for (int i = 0; i < MAX_SE_SLOTS; i++) {
+            auto& slot = m_seSlots[i];
+            if (!slot.active || slot.durationSamples == 0) continue;
+            if (frameCount >= slot.samplesLeft) {
+                stopSe(i);
+            } else {
+                slot.samplesLeft -= frameCount;
+            }
+        }
+    }
+
+    // マスターボリューム変更時のSE音量再計算
+    void seRecalcVolume()
+    {
+        for (int i = 0; i < MAX_SE_SLOTS; i++) {
+            auto& slot = m_seSlots[i];
+            if (!slot.active) continue;
+            int tlBase = fmvdatLookup(slot.velocity);
+            int tl = std::clamp(tlBase + m_masterAtt, 0, 127);
+            IFmEngine* engine = (m_seMode == SeMode::Rich) ? m_seEngine : m_engine;
+            seWriteCarrierTL(engine, slot.fmIndex, slot.patch.al, tl);
+        }
     }
 
     // =====================================================================

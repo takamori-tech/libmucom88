@@ -183,6 +183,39 @@ ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が�
 - `resume()` （一時停止→再開時）
 - `globalLoopRestart()` / `perChannelRestart()` （BGMループ巻き戻し時）
 
+### SE再生（効果音、Richモード対応）
+
+#### SeMode
+
+```cpp
+enum class SeMode { Classic, Rich };
+```
+
+| 値 | 説明 |
+|----|------|
+| `Classic` | BGMチャンネルをハイジャックしてSE再生（デフォルト、従来方式） |
+| `Rich` | 専用SEチップ（2台目のIFmEngine）のFM 6chでSE再生。BGMチャンネル不使用 |
+
+#### メソッド
+
+| メソッド | 説明 |
+|---------|------|
+| `setSeMode(mode, seEngine=nullptr)` | SEモード設定。Rich時はinit()済みのIFmEngineを渡す。切り替え時に全SE停止 |
+| `seMode()` | 現在のSEモード |
+| `playSe(patch, noteNum, velocity=15, durationMs=0)` | SE発音。音色・ノート・音量を指定。durationMs>0で自動停止。戻り値: SEスロット番号(0-5)、-1=失敗 |
+| `stopSe(seSlot)` | 指定スロットのSE停止 |
+| `stopAllSe()` | 全SE停止 |
+| `isSeActive(seSlot)` | 指定スロットがアクティブか |
+| `activeSeCount()` | アクティブなSEスロット数 |
+| `renderMixed(out, frameCount)` | BGM+SE混合レンダリング。advance()+tickVoiceTimer()+SE duration追跡+両チップPCM生成+ミキシングを一括実行 |
+
+**動作仕様:**
+- **Classic**: BGMのFMチャンネル（J,I,H,C,B,A優先）をhijackして発音。ノートオフ中のチャンネルを優先選択
+- **Rich**: SEチップのFM 6チャンネルに割り当て。全スロット使用中は最古のSEを停止して再割り当て（oldest策略）
+- **音量**: マスターボリューム（`m_masterAtt`）のみ適用。フェード・ダッキングはBGM専用でSEには影響しない
+- **スロット数**: 最大6（`MAX_SE_SLOTS`）。スロット番号はRichモードではFMインデックスと1:1対応
+- **スレッド安全性**: `playSe()`はオーディオスレッドから呼ぶこと（`playVoice()`と同じ方針）
+
 ### マスターボリューム
 
 | メソッド | 説明 |
