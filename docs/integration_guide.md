@@ -531,6 +531,47 @@ int slot = engine.playSe(shotPatch, 96, 15, 104);
 engine.setSeFrequency(slot, currentNote);
 ```
 
+### SEシーケンス再生（マルチノート + 自動ピッチスイープ）
+
+`playSeSequence()` を使うと、複数ノート + ピッチスイープを1つのSEスロットで自動再生できる。
+ゲーム側でフレーム毎にピッチ更新する必要がなく、SEの定義をデータドリブンにできる。
+
+```cpp
+// SEシーケンスの定義（最大8ノート）
+MmlEngine::SeSequenceNote notes[] = {
+    {96, 60, 100},   // 100ms: ノート96→60へピッチスイープ
+    {48, -1, 200},   // 200ms: ノート48で固定（スイープなし）
+    {60, 72, 150},   // 150ms: ノート60→72へピッチスイープ
+};
+
+// SEシーケンス発音（playSe()と同じスロット管理）
+int slot = engine.playSeSequence(laserPatch, notes, 3, 15);
+// → 100ms後に自動的にノート48へ遷移（パッチ再適用なし）
+// → さらに200ms後にノート60→72のスイープ開始
+// → 全ノート終了で自動停止
+
+// 途中停止も可能
+engine.stopSe(slot);
+```
+
+**動作詳細:**
+- 各ノートの `durationMs` 経過後、自動的に次のノートへ遷移（レガート: 周波数変更 + KEY_ONのみ、パッチ再適用なし）
+- `endNote != -1` のノートでは、duration中にstartNote→endNoteへ線形ピッチ補間（サンプル精度で毎フレーム更新）
+- `endNote == -1` のノートでは、startNoteの固定ピッチで再生
+- 全ノート消費で通常のSE停止処理
+- Classic/Richモード両対応、音量制御（マスター + SE）も `playSe()` と同じ
+
+**使用例: レーザー音**
+```cpp
+// ピッチ下降→維持→上昇の3フェーズレーザー
+MmlEngine::SeSequenceNote laser[] = {
+    {96, 72, 50},    // 50ms: 高→中へ急降下
+    {72, -1, 100},   // 100ms: 中域で維持
+    {72, 84, 80},    // 80ms: 中→高へ上昇
+};
+engine.playSeSequence(laserPatch, laser, 3);
+```
+
 ### SE音量
 
 - マスターボリューム（`setMasterVolume()`）はSEにも適用される

@@ -280,6 +280,16 @@ enum class SeMode { Classic, Rich };
 | `Classic` | BGMチャンネルをハイジャックしてSE再生（デフォルト、従来方式） |
 | `Rich` | 専用SEチップ（2台目のIFmEngine）のFM 6chでSE再生。BGMチャンネル不使用 |
 
+#### SeSequenceNote 構造体
+
+```cpp
+struct SeSequenceNote {
+    int startNote   = 60;   // 開始ノート番号
+    int endNote     = -1;   // 終了ノート番号 (-1 = スイープなし)
+    int durationMs  = 100;  // このノートのデュレーション(ms)
+};
+```
+
 #### メソッド
 
 | メソッド | 説明 |
@@ -287,7 +297,8 @@ enum class SeMode { Classic, Rich };
 | `setSeMode(mode, seEngine=nullptr)` | SEモード設定。Rich時はinit()済みのIFmEngineを渡す。切り替え時に全SE停止 |
 | `seMode()` | 現在のSEモード |
 | `playSe(patch, noteNum, velocity=15, durationMs=0)` | SE発音。音色・ノート・音量を指定。durationMs>0で自動停止。戻り値: SEスロット番号(0-5)、-1=失敗 |
-| `stopSe(seSlot)` | 指定スロットのSE停止 |
+| `playSeSequence(patch, notes, noteCount, velocity=15)` | SEシーケンス再生（マルチノート + ピッチスイープ）。notes: SeSequenceNote配列、noteCount: ノート数(1-8)。戻り値: SEスロット番号(0-5)、-1=失敗 |
+| `stopSe(seSlot)` | 指定スロットのSE停止（シーケンス再生中でも即時停止） |
 | `stopAllSe()` | 全SE停止 |
 | `setSeFrequency(seSlot, noteNum)` | アクティブなSEスロットのFM周波数を変更（F-Number更新のみ、パッチ再適用なし）。非アクティブスロットは無視 |
 | `isSeActive(seSlot)` | 指定スロットがアクティブか |
@@ -299,7 +310,14 @@ enum class SeMode { Classic, Rich };
 - **Rich**: SEチップのFM 6チャンネルに割り当て。全スロット使用中は最古のSEを停止して再割り当て（oldest策略）
 - **音量**: マスターボリューム（`m_masterAtt`）のみ適用。フェード・ダッキングはBGM専用でSEには影響しない
 - **スロット数**: 最大6（`MAX_SE_SLOTS`）。スロット番号はRichモードではFMインデックスと1:1対応
-- **スレッド安全性**: `playSe()`はオーディオスレッドから呼ぶこと（`playVoice()`と同じ方針）
+- **スレッド安全性**: `playSe()`/`playSeSequence()`はオーディオスレッドから呼ぶこと（`playVoice()`と同じ方針）
+
+**SEシーケンス再生:**
+- `playSeSequence()` はマルチノートSEを1つのスロットで再生する。各ノートのdurationMs経過後に自動的に次のノートへ遷移
+- ノート遷移時はパッチ再適用なし（周波数変更 + KEY_ONのみ）でレガート遷移
+- **ピッチスイープ**: `endNote != -1` のノートでは、durationMs間でstartNote→endNoteへ線形ピッチ補間（サンプル精度）
+- 全ノート消費で通常のstopSe処理。`stopSe()` で途中停止も可能
+- Classic/Richモード両対応（スロット確保は `playSe()` と同じロジック）
 
 ### マスターボリューム
 

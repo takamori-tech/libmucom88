@@ -503,6 +503,13 @@ public:
     }
     SeMode seMode() const { return m_seMode; }
 
+    // ── SEシーケンスノート（マルチノート + ピッチスイープ）─
+    struct SeSequenceNote {
+        int startNote   = 60;   // 開始ノート番号
+        int endNote     = -1;   // 終了ノート番号 (-1 = スイープなし)
+        int durationMs  = 100;  // このノートのデュレーション(ms)
+    };
+
     // ── 統合SE再生 ─────────────────────────────────────
     // Classic: BGMのFMチャンネルをハイジャックして再生
     // Rich: SEチップのFMチャンネルに割り当てて再生
@@ -515,6 +522,31 @@ public:
             return playSeRich(patch, noteNum, velocity, durationMs);
         else
             return playSeClassic(patch, noteNum, velocity, durationMs);
+    }
+
+    // ── SEシーケンス再生（マルチノート + ピッチスイープ）─────
+    // patch: FM音色, notes: ノート配列, noteCount: ノート数(1-8)
+    // velocity: 音量(0-15)
+    // 戻り値: SEスロット番号(0-5), -1=失敗
+    int playSeSequence(const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15)
+    {
+        if (!notes || noteCount <= 0) return -1;
+        noteCount = std::clamp(noteCount, 1, (int)SeSlot::MAX_SEQ_NOTES);
+
+        // 最初のノートのdurationMsでplaySe()と同じスロット確保・音色適用・キーオン
+        int slotIdx = playSe(patch, notes[0].startNote, velocity, notes[0].durationMs);
+        if (slotIdx < 0) return -1;
+
+        // シーケンス情報を設定
+        auto& slot = m_seSlots[slotIdx];
+        slot.isSequence = true;
+        slot.seqNoteCount = noteCount;
+        slot.seqCurrentNote = 0;
+        slot.seqVelocity = velocity;
+        for (int i = 0; i < noteCount; i++)
+            slot.seqNotes[i] = notes[i];
+
+        return slotIdx;
     }
 
     void stopSe(int seSlot)
@@ -1428,6 +1460,13 @@ private:
         FmPatch  patch;                    // SE再生中の音色（TL再計算用）
         int      noteNum        = 0;       // 再生中のノート番号
         int      velocity       = 15;      // ベロシティ (0-15)
+        // シーケンス再生（マルチノート + ピッチスイープ）
+        static constexpr int MAX_SEQ_NOTES = 8;
+        std::array<SeSequenceNote, MAX_SEQ_NOTES> seqNotes;  // シーケンスノート配列
+        int  seqNoteCount   = 0;    // ノート数
+        int  seqCurrentNote = 0;    // 現在再生中のノートインデックス
+        int  seqVelocity    = 15;   // シーケンス全体のベロシティ
+        bool isSequence     = false; // シーケンス再生中か
     };
 
     IFmEngine*  m_engine;
@@ -2795,14 +2834,47 @@ private:
         return slotIdx;
     }
 
-    // SE duration自動停止処理
+    // SE duration自動停止処理（シーケンス再生・ピッチスイープ対応）
     void seTickDuration(uint32_t frameCount)
     {
         for (int i = 0; i < MAX_SE_SLOTS; i++) {
             auto& slot = m_seSlots[i];
             if (!slot.active || slot.durationSamples == 0) continue;
+
+            // ピッチスイープ: 現在ノートのendNote != -1 の場合、毎フレーム補間
+            if (slot.isSequence) {
+                const auto& curNote = slot.seqNotes[slot.seqCurrentNote];
+                if (curNote.endNote >= 0 && slot.durationSamples > 0) {
+                    // 進行率: 0.0（開始）→ 1.0（終了）
+                    float progress = 1.0f - (float)slot.samplesLeft / (float)slot.durationSamples;
+                    progress = std::clamp(progress, 0.0f, 1.0f);
+                    // startNote → endNote を浮動小数点で補間し、整数に丸める
+                    float interpNote = (float)curNote.startNote
+                                     + ((float)curNote.endNote - (float)curNote.startNote) * progress;
+                    int newNote = (int)std::round(interpNote);
+                    if (newNote != slot.noteNum)
+                        setSeFrequency(i, newNote);
+                }
+            }
+
             if (frameCount >= slot.samplesLeft) {
-                stopSe(i);
+                // シーケンス再生: 次のノートへ遷移
+                if (slot.isSequence && slot.seqCurrentNote + 1 < slot.seqNoteCount) {
+                    slot.seqCurrentNote++;
+                    const auto& nextNote = slot.seqNotes[slot.seqCurrentNote];
+                    // 新しいノートのdurationを設定
+                    slot.durationSamples = (uint32_t)((uint64_t)nextNote.durationMs * m_sampleRate / 1000);
+                    slot.samplesLeft = slot.durationSamples;
+                    slot.noteNum = nextNote.startNote;
+                    // パッチ再適用なしで周波数変更 + KEY_ON（レガート遷移）
+                    IFmEngine* eng = (m_seMode == SeMode::Rich) ? m_seEngine : m_engine;
+                    if (eng) {
+                        eng->setFrequency(slot.fmIndex, nextNote.startNote);
+                        eng->fmKeyOn(slot.fmIndex);
+                    }
+                } else {
+                    stopSe(i);
+                }
             } else {
                 slot.samplesLeft -= frameCount;
             }
