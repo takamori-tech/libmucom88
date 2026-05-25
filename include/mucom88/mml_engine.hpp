@@ -585,6 +585,13 @@ public:
         return m_engine ? m_engine->getSsgMixScale() : 1.0f;
     }
 
+    // ── 出力ゲイン ──────────────────────────────────
+    // renderMixed() の最終段で PCM にゲインを適用しクリッピング。
+    // fmgenの出力レベル補正（例: 2.0倍）等に使用。
+    // play()/stop()でリセットされない（ゲームのオーディオ設定として永続）。
+    void setOutputGain(float gain) { m_outputGain = gain; }
+    float getOutputGain() const { return m_outputGain; }
+
     // ── マスターボリューム ─────────────────────────────
     // vol: 0.0（無音）〜 1.0（最大）。FM TL減衰値に内部変換。
     // ダッキングやフェードとは独立。play()/stop()でリセットされない。
@@ -942,14 +949,31 @@ public:
                 m_engine->generateInterleaved(bgmBuf, n);
 
             if (m_seMode == SeMode::Rich && m_seEngine) {
+                // Richモード: BGM + SE ミキシング（+ ゲイン適用）
                 int16_t seBuf[32] = {};
                 m_seEngine->generateInterleaved(seBuf, n);
-                for (uint32_t i = 0; i < n * 2; i++) {
-                    int32_t mixed = (int32_t)bgmBuf[i] + (int32_t)seBuf[i];
-                    out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
+                if (m_outputGain != 1.0f) {
+                    for (uint32_t i = 0; i < n * 2; i++) {
+                        int32_t mixed = (int32_t)bgmBuf[i] + (int32_t)seBuf[i];
+                        mixed = (int32_t)(mixed * m_outputGain);
+                        out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
+                    }
+                } else {
+                    for (uint32_t i = 0; i < n * 2; i++) {
+                        int32_t mixed = (int32_t)bgmBuf[i] + (int32_t)seBuf[i];
+                        out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
+                    }
                 }
             } else {
-                std::memcpy(out + offset * 2, bgmBuf, n * 2 * sizeof(int16_t));
+                // Classicモード: BGMのみ（+ ゲイン適用）
+                if (m_outputGain != 1.0f) {
+                    for (uint32_t i = 0; i < n * 2; i++) {
+                        int32_t s = (int32_t)(bgmBuf[i] * m_outputGain);
+                        out[offset * 2 + i] = (int16_t)std::clamp(s, (int32_t)-32768, (int32_t)32767);
+                    }
+                } else {
+                    std::memcpy(out + offset * 2, bgmBuf, n * 2 * sizeof(int16_t));
+                }
             }
             offset += n;
             remaining -= n;
@@ -1439,6 +1463,7 @@ private:
     // 3層減衰アーキテクチャ: 各成分は独立に設定され、合算値がレジスタ書き込みに使用される
     int         m_masterAtt  = 0;    // マスターボリューム減衰（0=最大、127=無音）
     int         m_seAtt      = 0;    // SE専用ボリューム減衰（0=最大、127=無音）
+    float       m_outputGain = 1.0f; // 出力ゲイン（renderMixed最終段、play()/stop()でリセットしない）
     int         m_fadeAtt    = 0;    // フェードアウト減衰（0=フェードなし、127=無音）
     int         m_duckAtt    = 0;    // ダッキング減衰（0=ダッキングなし）
     // フェードアウト/イン状態

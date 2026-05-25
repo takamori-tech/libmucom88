@@ -360,6 +360,8 @@ enum class FadeAction {
 |---------|------|
 | `setSsgMixScale(ssgScale)` | SSG出力のリニアスケール設定。1.0=等倍、0.71≈-3dB（MUCOM88Vデフォルト）。IFmEngine にパススルー |
 | `getSsgMixScale()` | 現在のSSGスケール値 |
+| `setOutputGain(gain)` | 出力ゲイン設定。`renderMixed()` の最終段でPCMにゲインを掛けてクリッピング。デフォルト1.0。play()/stop()でリセットされない |
+| `getOutputGain()` | 現在の出力ゲイン値 |
 | `setGlobalAttenuation(att)` | ダッキング減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A/B: スケーリング。マスターボリューム・フェードと独立に加算される |
 | `globalAttenuation()` | 合算減衰値（masterAtt + fadeAtt + duckAtt） |
 
