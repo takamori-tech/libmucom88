@@ -73,6 +73,16 @@ public:
     // Rich: 専用SEチップ（2台目のIFmEngine）でSE再生（BGMチャンネル不使用）
     enum class SeMode { Classic, Rich };
 
+    // ── フェードアウト完了時の自動アクション ────────────────────
+    // None: 何もしない（デフォルト、後方互換）
+    // Stop: BGM停止（stop() 呼び出し相当）
+    // StopAndReset: BGM停止 + チップリセット（IFmEngine::reset()）
+    enum class FadeAction {
+        None,
+        Stop,
+        StopAndReset
+    };
+
     MmlEngine() : m_engine(nullptr), m_sampleRate(44100), m_chipClock(7987200), m_playing(false) {}
 
     // ── チャンネル種別判定 ────────────────────────────────
@@ -164,6 +174,8 @@ public:
         m_fadeAtt  = 0;
         m_duckAtt  = 0;
         m_fading   = false;
+        m_fadeAction   = FadeAction::None;
+        m_fadeOutDone  = false;
         m_globalAtt = m_masterAtt;
         stopAllSe();
         m_seAllocCounter = 0;
@@ -598,11 +610,19 @@ public:
 
     // ── フェードアウト/イン ──────────────────────────────
     // fadeOut: 指定秒数で無音まで減衰。フェード中にplay()/stop()するとリセット。
-    void fadeOut(float seconds) {
+    // onComplete: フェードアウト完了時の自動アクション（デフォルト: None=何もしない）
+    void fadeOut(float seconds, FadeAction onComplete = FadeAction::None) {
+        m_fadeAction = onComplete;
         if (seconds <= 0.0f) {
             m_fadeAtt = 127;
             m_fading = false;
             recalcGlobalAtt();
+            // 即時完了: FadeAction を実行
+            if (m_fadeAction != FadeAction::None) {
+                FadeAction action = m_fadeAction;
+                m_fadeAction = FadeAction::None;
+                executeFadeAction(action);
+            }
             return;
         }
         m_fadeStartAtt  = m_fadeAtt;
@@ -632,6 +652,9 @@ public:
         recalcGlobalAtt();
     }
     bool isFading() const { return m_fading; }
+    // フェードアウト完了後にFadeActionが実行されたかを返す。
+    // play()でリセット。stop()ではリセットしない（呼び出し側がポーリングで検出するため）。
+    bool isFadeOutDone() const { return m_fadeOutDone; }
 
     // ── グローバル減衰（ダッキング用・後方互換）─────────────
     // att: FM TL加算値（0=通常、20≈-15dB）。ダッキング成分を設定。
@@ -685,6 +708,14 @@ public:
                 m_fadeAtt = m_fadeStartAtt + (int)((m_fadeTargetAtt - m_fadeStartAtt) * t);
             }
             recalcGlobalAtt();
+        }
+        // フェードアウト完了時の自動アクション実行
+        // stop()がm_fadingをfalseにするため、FadeAction判定はstop()呼び出し前に行う
+        if (!m_fading && m_fadeTargetAtt == 127 && m_fadeAction != FadeAction::None) {
+            FadeAction action = m_fadeAction;
+            m_fadeAction = FadeAction::None;
+            executeFadeAction(action);
+            return; // stop()済みのため、以降のTimer-B処理をスキップ
         }
 
         // 16サンプル単位で処理（OpenMUCOM88と同じ粒度）
@@ -1416,6 +1447,8 @@ private:
     int         m_fadeTargetAtt    = 0;     // フェード目標のfadeAtt値
     uint32_t    m_fadeTotalSamples = 0;     // フェード全体のサンプル数
     uint32_t    m_fadeSamplesLeft  = 0;     // フェード残りサンプル数
+    FadeAction  m_fadeAction       = FadeAction::None;  // フェードアウト完了時の自動アクション
+    bool        m_fadeOutDone      = false;              // FadeAction実行済みフラグ（play()でリセット）
     // ボイス再生＋ダッキング状態マシン（スレッド安全）
     // ゲームスレッド: playVoice/stopVoice で store/exchange
     // オーディオスレッド: tickVoiceTimer で CAS 遷移
@@ -2029,6 +2062,35 @@ private:
             m_engine->writeReg(0, 0x08 + i, 0x00);
         // リズム全停止（Dump bit=1）
         m_engine->writeReg(0, 0x10, 0x80 | 0x3F);
+    }
+
+    // フェードアウト完了時の自動アクション実行
+    // stop()がm_fading/m_fadeAttをリセットするため、呼び出し側で
+    // m_fadeActionを事前にローカル変数に退避してからこのメソッドを呼ぶこと
+    void executeFadeAction(FadeAction action)
+    {
+        if (action == FadeAction::Stop || action == FadeAction::StopAndReset) {
+            stop();
+        }
+        if (action == FadeAction::StopAndReset) {
+            if (m_engine) m_engine->reset();
+            if (m_seEngine) {
+                m_seEngine->reset();
+                // Richモード: SEチップの初期状態を再確立
+                if (m_seMode == SeMode::Rich) {
+                    for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
+                        int port = fmPort(fi);
+                        int off  = fmOffset(fi);
+                        m_seEngine->writeReg(port, 0xB4 + off, 0xC0);
+                    }
+                    m_seEngine->writeReg(0, 0x07, 0x3F);
+                    m_seEngine->writeReg(0, 0x27, 0x3A);
+                    if (m_engine)
+                        m_seEngine->setSsgMixScale(m_engine->getSsgMixScale());
+                }
+            }
+        }
+        m_fadeOutDone = true;
     }
 
     // =====================================================================

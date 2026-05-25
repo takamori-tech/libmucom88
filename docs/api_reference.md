@@ -327,12 +327,32 @@ SEボリュームは `playSe()` で発音するSE専用の音量調整。マス�
 
 | メソッド | 説明 |
 |---------|------|
-| `fadeOut(seconds)` | 指定秒数で無音までフェードアウト。seconds=0で即時無音 |
+| `fadeOut(seconds, onComplete)` | 指定秒数で無音までフェードアウト。seconds=0で即時無音。onComplete でフェード完了時の自動アクションを指定（デフォルト: FadeAction::None） |
 | `fadeIn(seconds)` | 指定秒数でマスターボリュームまでフェードイン。seconds=0で即時復帰 |
 | `resetFade()` | フェードを即座にキャンセルしマスターボリュームに復帰 |
 | `isFading()` | フェード進行中か |
+| `isFadeOutDone()` | フェードアウト完了後にFadeActionが実行されたか。`play()` でリセット |
 
 フェードはサンプル単位で進行（テンポ非依存）。デフォルト: **フェードなし**（fadeAtt=0）。`play()` / `stop()` でリセットされる。
+
+#### FadeAction
+
+```cpp
+enum class FadeAction {
+    None,         // 何もしない（デフォルト、後方互換）
+    Stop,         // BGM停止（stop() 呼び出し相当）
+    StopAndReset  // BGM停止 + チップリセット（IFmEngine::reset()）
+};
+```
+
+| 値 | 説明 |
+|----|------|
+| `None` | 何もしない（デフォルト）。従来の `fadeOut(seconds)` と同一動作 |
+| `Stop` | フェードアウト完了時に `stop()` を自動呼び出し。全音消音しBGMを停止 |
+| `StopAndReset` | `stop()` に加え、BGMチップとSEチップの `reset()` を実行。Richモード時はSEチップの初期状態（PAN/mixer/timer）も再確立 |
+
+`isFadeOutDone()` は FadeAction 実行後に `true` を返す。`play()` で自動的に `false` にリセットされる。
+`stop()` では `isFadeOutDone()` をリセットしない（呼び出し側がポーリングで検出するため）。
 
 ### 音量バランス・制御
 

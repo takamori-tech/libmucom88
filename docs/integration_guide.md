@@ -293,7 +293,7 @@ engine.playVoice(0);  // ボイスも80%の音量で再生
 
 ### フェードアウト/イン
 
-ステージ終了時のBGMフェードアウト:
+ステージ終了時のBGMフェードアウト（手動停止）:
 
 ```cpp
 // 2秒かけてフェードアウト
@@ -307,6 +307,39 @@ while (engine.isFading()) {
 // BGM停止
 engine.stop();
 ```
+
+### フェードアウト完了時の自動停止（FadeAction）
+
+`fadeOut()` の第2引数に `FadeAction` を指定すると、フェードアウト完了時に
+自動的にBGM停止やチップリセットを実行できる。ゲームループ側でのフェード完了検出
+ボイラープレートが不要になる。
+
+```cpp
+// 2秒かけてフェードアウト → 完了後に自動停止
+engine.fadeOut(2.0f, MmlEngine::FadeAction::Stop);
+
+// 2秒かけてフェードアウト → 完了後に自動停止 + チップリセット
+// Richモード使用時はSEチップも含めてリセットされる
+engine.fadeOut(2.0f, MmlEngine::FadeAction::StopAndReset);
+```
+
+フェードアウト完了後、`isFadeOutDone()` が `true` を返す。
+次の `play()` 呼び出しで自動的にリセットされる。
+
+```cpp
+// フェードアウト完了検出（ゲームループ側）
+if (engine.isFadeOutDone()) {
+    // 次のBGMをロード・再生
+    engine.loadFromParseResult(nextMuc);
+    engine.play();  // isFadeOutDone() が自動リセットされる
+}
+```
+
+| FadeAction | 動作 |
+|------------|------|
+| `None` | 何もしない（デフォルト、従来の `fadeOut(seconds)` と同一） |
+| `Stop` | `stop()` を自動呼び出し。全音消音しBGMを停止 |
+| `StopAndReset` | `stop()` + BGMチップとSEチップの `reset()`。Richモード時はSEチップの初期状態も再確立 |
 
 フェード中にボイスを再生する場合、ボイスはマスターボリュームのみで再生される
 （フェード減衰は適用されない）。
