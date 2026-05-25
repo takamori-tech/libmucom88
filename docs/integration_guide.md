@@ -234,7 +234,7 @@ engine.stopVoice();
 
 ### ダッキング（BGM自動減衰）
 
-`setDucking()` を設定すると、ボイス再生中に FM/SSG の音量を自動的に下げる。
+`setDucking()` を設定すると、ボイス再生中にBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）の音量を自動的に下げる。
 ボイス終了後は指定した時間をかけて徐々に復帰する。
 
 ```cpp
@@ -249,8 +249,9 @@ engine.playVoice(0);
 // → ボイス終了後、0.15秒かけて元の音量に復帰
 ```
 
-レジスタレベルで FM の TL（Total Level）、SSG の振幅、ADPCM-A の全体 TL を操作する。
-ADPCM-B（ボイス）の音量には影響しないため、ボイスの聞き取りやすさが確保される。
+レジスタレベルで FM の TL（Total Level）、SSG の振幅、ADPCM-A の全体 TL、ADPCM-B のボリュームを操作する。
+ボイス再生中は `recalcGlobalAtt()` のガードにより ADPCM-B レジスタ書き込みがスキップされ、
+ボイスの音量は `playVoice()` で masterAtt のみ適用されるため、ボイスの聞き取りやすさが確保される。
 
 ダッキングを無効にするには `setDucking(0)` を呼ぶ。
 

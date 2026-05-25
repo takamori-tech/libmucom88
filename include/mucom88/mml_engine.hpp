@@ -403,18 +403,18 @@ public:
             adpcmbKeyOff();
             m_channels[10].noteOn = false;
         }
+        // 状態遷移を先に行い、recalcGlobalAtt()内のADPCM-Bガードを有効化
+        m_voiceDuckState.store(VoiceDuckState::Playing, std::memory_order_release);
+        // ダッキング開始（ADPCM-Bはガードでスキップされる）
+        if (m_duckEnabled) {
+            setGlobalAttenuation(m_duckAttTarget);
+        }
+        // ボイス再生開始 + 音量設定（最後に行うので上書きされない）
         m_engine->playVoice(voiceId);
-        // マスターボリュームをボイスに適用（フェード・ダッキングは適用しない）
         if (m_masterAtt > 0) {
             int voiceVol = std::clamp(255 - m_masterAtt * 2, 0, 255);
             m_engine->writeReg(1, 0x0B, (uint8_t)voiceVol);
         }
-        // ダッキング開始: FM/SSGを即座に減衰（状態遷移前にレジスタ書き込み）
-        if (m_duckEnabled) {
-            setGlobalAttenuation(m_duckAttTarget);
-        }
-        // 状態遷移は最後（release ordering で上記の書き込みを公開）
-        m_voiceDuckState.store(VoiceDuckState::Playing, std::memory_order_release);
     }
     void stopVoice() {
         if (!m_engine) return;
@@ -596,10 +596,11 @@ public:
     }
 
     // ── ダッキング設定 ───────────────────────────────────
-    // ボイス再生中にFM/SSGの音量を自動減衰する。
+    // ボイス再生中にBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）の音量を自動減衰する。
     // attTarget: FM TL加算値（0=無効、20≈-15dB）。SSGはatt/4で換算。
     // releaseSec: ボイス終了後の減衰解除時間（秒）。0で即時復帰。
-    // ADPCM-A/Bには影響しない（レジスタが別系統のため）。
+    // ボイス再生中はrecalcGlobalAtt()のガードでADPCM-Bレジスタ書き込みがスキップされ、
+    // ボイスの音量はplayVoice()でmasterAttのみ適用される。
     void setDucking(int attTarget, float releaseSec = 0.15f) {
         m_duckAttTarget = attTarget;
         m_duckReleaseSamples = (uint32_t)(releaseSec * m_sampleRate);
@@ -2110,7 +2111,10 @@ private:
         int rhythmAtt = m_globalAtt * 63 / 127;
         int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
         m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
-        adpcmbSetVolume(m_channels[10].volume);
+        // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
+        if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
+            adpcmbSetVolume(m_channels[10].volume);
+        }
     }
 
     // 全消音

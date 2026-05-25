@@ -243,9 +243,10 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 |---------|------|
 | `setDucking(attTarget, releaseSec=0.15)` | ダッキング設定。attTarget=FM TL加算値（20≈-15dB）、releaseSec=復帰時間。attTarget=0で無効 |
 
-`setDucking()` を設定すると、`playVoice()` 呼び出し時にFM/SSGが即座に減衰し、
+`setDucking()` を設定すると、`playVoice()` 呼び出し時にBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）が即座に減衰し、
 ボイス終了後に releaseSec かけて元の音量に復帰する。
-ADPCM-B（ボイス）には影響しない。FM/SSG/ADPCM-A（リズム）が減衰対象。
+ボイス再生中は `recalcGlobalAtt()` のガードによりADPCM-Bレジスタ書き込みがスキップされ、
+ボイスの音量は `playVoice()` で masterAtt のみ適用される（フェード・ダッキングの影響を受けない）。
 デフォルト: **無効**（attTarget=0）。`play()` / `stop()` でリセットされる。
 
 ### チャンネルハイジャック（効果音割り込み用）
