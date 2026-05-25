@@ -525,6 +525,16 @@ public:
             stopSe(i);
     }
 
+    void setSeFrequency(int seSlot, int noteNum)
+    {
+        if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
+        auto& slot = m_seSlots[seSlot];
+        if (!slot.active) return;
+        IFmEngine* eng = (m_seMode == SeMode::Rich) ? m_seEngine : m_engine;
+        if (eng) eng->setFrequency(slot.fmIndex, noteNum);
+        slot.noteNum = noteNum;
+    }
+
     bool isSeActive(int seSlot) const
     {
         return (seSlot >= 0 && seSlot < MAX_SE_SLOTS) ? m_seSlots[seSlot].active : false;

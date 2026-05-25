@@ -401,6 +401,9 @@ int slot = engine.playSe(explosionPatch, 60);          // C4, velocity=15
 int slot2 = engine.playSe(laserPatch, 72, 12);         // C5, velocity=12
 int slot3 = engine.playSe(hitPatch, 48, 15, 200);      // C3, 200ms後に自動停止
 
+// SE再生中のピッチ変更（F-Number更新のみ、パッチ再適用なし）
+engine.setSeFrequency(slot, 48);   // ノート番号を変更
+
 // SE停止（手動）
 engine.stopSe(slot);
 
@@ -433,6 +436,18 @@ void audioCallback(void* userdata, uint8_t* stream, int len) {
 - Richモード: SEチップのFM 6chに最大6音同時発音
 - 全スロット使用中に `playSe()` を呼ぶと、最も古いSEを停止して再割り当て（oldest策略）
 - Classicモード: BGMのFMチャンネル（J,I,H,C,B,A優先）をhijack。ノートオフ中のチャンネルを優先選択
+
+### SEピッチスイープ
+
+`setSeFrequency()` を使うと、再生中のSEスロットのピッチをパッチ再適用なしに変更できる。
+`stopSe()` → `playSe()` の繰り返しに比べ、レジスタ書き込みが30+回→2回に削減される。
+
+```cpp
+// ショット音のピッチ下降（MIDI note 96→60 を毎フレーム更新）
+int slot = engine.playSe(shotPatch, 96, 15, 104);
+// オーディオコールバック内で毎フレーム呼ぶ
+engine.setSeFrequency(slot, currentNote);
+```
 
 ### SE音量
 

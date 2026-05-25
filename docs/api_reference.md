@@ -205,6 +205,7 @@ enum class SeMode { Classic, Rich };
 | `playSe(patch, noteNum, velocity=15, durationMs=0)` | SE発音。音色・ノート・音量を指定。durationMs>0で自動停止。戻り値: SEスロット番号(0-5)、-1=失敗 |
 | `stopSe(seSlot)` | 指定スロットのSE停止 |
 | `stopAllSe()` | 全SE停止 |
+| `setSeFrequency(seSlot, noteNum)` | アクティブなSEスロットのFM周波数を変更（F-Number更新のみ、パッチ再適用なし）。非アクティブスロットは無視 |
 | `isSeActive(seSlot)` | 指定スロットがアクティブか |
 | `activeSeCount()` | アクティブなSEスロット数 |
 | `renderMixed(out, frameCount)` | BGM+SE混合レンダリング。advance()+tickVoiceTimer()+SE duration追跡+両チップPCM生成+ミキシングを一括実行 |
