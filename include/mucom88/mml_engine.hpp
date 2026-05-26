@@ -1032,20 +1032,16 @@ public:
                 m_engine->generateInterleaved(bgmBuf, n);
 
             if (m_seMode == SeMode::Rich && m_seEngine) {
-                // Richモード: BGM + SE ミキシング（+ ゲイン適用）
+                // Richモード: BGM + SE ミキシング
+                // ゲインはBGMのみに適用。SE は等倍で加算しヘッドルームを確保する。
+                // SE音量は setSeVolume() + setMasterVolume() で調整可能。
                 int16_t seBuf[32] = {};
                 m_seEngine->generateInterleaved(seBuf, n);
-                if (m_outputGain != 1.0f) {
-                    for (uint32_t i = 0; i < n * 2; i++) {
-                        int32_t mixed = (int32_t)bgmBuf[i] + (int32_t)seBuf[i];
-                        mixed = (int32_t)(mixed * m_outputGain);
-                        out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
-                    }
-                } else {
-                    for (uint32_t i = 0; i < n * 2; i++) {
-                        int32_t mixed = (int32_t)bgmBuf[i] + (int32_t)seBuf[i];
-                        out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
-                    }
+                for (uint32_t i = 0; i < n * 2; i++) {
+                    int32_t bgm = (int32_t)bgmBuf[i];
+                    if (m_outputGain != 1.0f) bgm = (int32_t)(bgm * m_outputGain);
+                    int32_t mixed = bgm + (int32_t)seBuf[i];
+                    out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
                 }
             } else {
                 // Classicモード: BGMのみ（+ ゲイン適用）
