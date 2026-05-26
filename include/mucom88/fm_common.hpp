@@ -103,8 +103,8 @@ inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
 {
     double freq = 440.0 * std::pow(2.0, (noteNum - 69) / 12.0);
     double divisor = chipClock / 64.0;
-    uint16_t tp = (uint16_t)std::round(divisor / freq);
-    return std::clamp(tp, (uint16_t)1, (uint16_t)4095);
+    uint16_t tp = static_cast<uint16_t>(std::round(divisor / freq));
+    return std::clamp(tp, static_cast<uint16_t>(1), static_cast<uint16_t>(4095));
 }
 
 // =============================================================================
@@ -123,7 +123,7 @@ inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
 inline FmPatch parseVoiceDatEntry(const uint8_t* voiceDat, size_t dataSize, int patchNo)
 {
     FmPatch p;
-    size_t off = (size_t)patchNo * 32;
+    size_t off = static_cast<size_t>(patchNo) * 32;
     if (off + 32 > dataSize) return p;
     const uint8_t* rec = &voiceDat[off];
 
@@ -165,7 +165,7 @@ inline FmPatch parseVoiceDatEntry(const uint8_t* voiceDat, size_t dataSize, int 
     // MUCOM88ではShift_JIS半角カタカナ(0xA0-0xDF)等も使用されるためバイト列をそのまま保持
     // 末尾の0x00と0x20を除去
     for (int j = 0; j < 6; j++) {
-        p.name += (char)rec[26 + j];
+        p.name += static_cast<char>(rec[26 + j]);
     }
     while (!p.name.empty() && (p.name.back() == ' ' || p.name.back() == '\0'))
         p.name.pop_back();
@@ -185,17 +185,17 @@ inline void writeVoiceDatEntry(uint8_t* rec, const FmPatch& p)
     static const int slotMap[4] = { 0, 2, 1, 3 };
 
     rec[0] = 0;
-    rec[25] = (uint8_t)(((p.fb & 7) << 3) | (p.al & 7));
+    rec[25] = static_cast<uint8_t>(((p.fb & 7) << 3) | (p.al & 7));
 
     for (int oi = 0; oi < 4; oi++) {
         int s = slotMap[oi];
         const auto& op = p.op[oi];
-        rec[1 + s]  = (uint8_t)(((op.dt & 7) << 4) | (op.ml & 0x0F));
-        rec[5 + s]  = (uint8_t)(op.tl & 0x7F);
-        rec[9 + s]  = (uint8_t)(((op.ks & 3) << 6) | (op.ar & 0x1F));
-        rec[13 + s] = (uint8_t)(((op.ame & 1) << 7) | (op.dr & 0x1F));
-        rec[17 + s] = (uint8_t)(op.sr & 0x1F);
-        rec[21 + s] = (uint8_t)(((op.sl & 0x0F) << 4) | (op.rr & 0x0F));
+        rec[1 + s]  = static_cast<uint8_t>(((op.dt & 7) << 4) | (op.ml & 0x0F));
+        rec[5 + s]  = static_cast<uint8_t>(op.tl & 0x7F);
+        rec[9 + s]  = static_cast<uint8_t>(((op.ks & 3) << 6) | (op.ar & 0x1F));
+        rec[13 + s] = static_cast<uint8_t>(((op.ame & 1) << 7) | (op.dr & 0x1F));
+        rec[17 + s] = static_cast<uint8_t>(op.sr & 0x1F);
+        rec[21 + s] = static_cast<uint8_t>(((op.sl & 0x0F) << 4) | (op.rr & 0x0F));
     }
 
     // OPM拡張バイト（byte 25-27）
@@ -207,8 +207,8 @@ inline void writeVoiceDatEntry(uint8_t* rec, const FmPatch& p)
 
     // 音色名 (byte 26-31, 6バイト固定)
     for (int j = 0; j < 6; j++) {
-        char c = (j < (int)p.name.size()) ? p.name[j] : ' ';
-        rec[26 + j] = (uint8_t)c;
+        char c = (j < static_cast<int>(p.name.size())) ? p.name[j] : ' ';
+        rec[26 + j] = static_cast<uint8_t>(c);
     }
 }
 

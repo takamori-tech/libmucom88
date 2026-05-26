@@ -194,7 +194,7 @@ public:
         auto size = ifs.tellg();
         if (size < 32) return false;
         ifs.seekg(0);
-        m_voiceDat.resize((size_t)size);
+        m_voiceDat.resize(static_cast<size_t>(size));
         ifs.read(reinterpret_cast<char*>(m_voiceDat.data()), size);
         return true;
     }
@@ -233,7 +233,7 @@ public:
 
         // voice.dat から未定義音色を補完
         if (hasVoiceDat()) {
-            int maxPatch = (int)(m_voiceDat.size() / 32);
+            int maxPatch = static_cast<int>(m_voiceDat.size() / 32);
             for (int i = 0; i < maxPatch; i++) {
                 if (m_patches.count(i) && m_patches[i].valid) continue;
                 Mucom88Patch p = parseVoiceDatEntry(i);
@@ -383,14 +383,14 @@ private:
     int findPatchByName(const std::string& name) const
     {
         if (m_voiceDat.size() < 32) return -1;
-        int maxPatch = (int)(m_voiceDat.size() / 32);
+        int maxPatch = static_cast<int>(m_voiceDat.size() / 32);
 
         for (int i = 0; i < maxPatch; i++) {
-            const uint8_t* rec = &m_voiceDat[(size_t)i * 32];
+            const uint8_t* rec = &m_voiceDat[static_cast<size_t>(i) * 32];
             // voice.dat byte 26-31: 音色名（6バイト、末尾0x00/0x20パディング）
             std::string entryName;
             for (int j = 0; j < 6; j++) {
-                entryName += (char)rec[26 + j];
+                entryName += static_cast<char>(rec[26 + j]);
             }
             while (!entryName.empty() && (entryName.back() == ' ' || entryName.back() == '\0'))
                 entryName.pop_back();
@@ -420,7 +420,7 @@ private:
             // MUCOM88EX拡張: #mode OPNA / #mode OPM / #mode OPNB
             auto mode = getValue(5);
             // 大文字に正規化
-            for (auto& c : mode) c = (char)std::toupper((unsigned char)c);
+            for (auto& c : mode) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
             // 末尾空白・改行除去
             while (!mode.empty() && (mode.back() == ' ' || mode.back() == '\r' || mode.back() == '\n'))
                 mode.pop_back();
@@ -647,7 +647,7 @@ private:
                     // st.lastFullTicks（= Z80のBEFCO相当）でtickを進める。
                     // Z80 STBF3にはechoCount>0チェックがない — \は常にエコーを生成する
                     uint32_t echoDur = st.lastFullTicks;  // Z80 BEFCO互換
-                    for (int i = (int)events.size() - 1; i >= 0; i--) {
+                    for (int i = static_cast<int>(events.size()) - 1; i >= 0; i--) {
                         if (events[i].type == MmlEventType::NOTE_ON && events[i].channel == ch) {
                             // 音量下げイベント
                             MmlEvent volDown{};
@@ -714,7 +714,7 @@ private:
                 int ppqQ = st.wholeTick / 4;  // 4分音符あたりのクロック数
                 if (ppqQ <= 0) ppqQ = 32;
                 if (bpm <= 0) bpm = 120;
-                int tb = 256 - (int)(60.0 * FMCLOCK_INT / (16.0 * bpm * ppqQ));
+                int tb = 256 - static_cast<int>(60.0 * FMCLOCK_INT / (16.0 * bpm * ppqQ));
                 tb = std::clamp(tb, 0, 255);
                 st.tempo = tb;
                 MmlEvent ev{};
@@ -732,7 +732,7 @@ private:
                     // サブコマンド文字列を取得
                     std::string sub;
                     while (pos < mml.size() && std::isalpha((unsigned char)mml[pos])) {
-                        sub += (char)std::toupper((unsigned char)mml[pos]);
+                        sub += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
                         pos++;
                     }
                     int param = 0;
@@ -968,7 +968,7 @@ private:
                     // defLenIsClock時はクロック直接値として扱う（wholeTick/lenしない）
                     if (!explicitLen && st.defLenIsClock) {
                         ticks = len;
-                        int dot = (int)ticks;
+                        int dot = static_cast<int>(ticks);
                         for (int d = 0; d < dotCount; d++) {
                             dot >>= 1;
                             ticks += dot;
@@ -1384,7 +1384,7 @@ private:
                             pe.value    = endNote;          // 終了音
                             pe.duration = events[i].duration; // tick数
                             pe.channel  = ch;
-                            events.insert(events.begin() + (int)i, pe);
+                            events.insert(events.begin() + static_cast<int>(i), pe);
                             break;
                         }
                     }
@@ -1415,7 +1415,7 @@ private:
                     // 拡張レジスタ名をパース
                     std::string regName;
                     while (pos < mml.size() && std::isalpha((unsigned char)mml[pos])) {
-                        regName += (char)std::toupper((unsigned char)mml[pos]);
+                        regName += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
                         pos++;
                     }
                     // yDM/yTL/yKA/yDR/ySR/ySL/ySE → ベースレジスタ
@@ -1606,8 +1606,8 @@ private:
                         elen = st.defLen;
                     if (elen <= 0) elen = 4;
                     uint32_t t0 = (st.defLenIsClock && elen == st.defLen)
-                                  ? (uint32_t)elen : st.wholeTick / elen;
-                    int d = (int)t0;
+                                  ? static_cast<uint32_t>(elen) : st.wholeTick / elen;
+                    int d = static_cast<int>(t0);
                     while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
                     ticks += t0;
                 }
@@ -1631,14 +1631,14 @@ private:
                 } else if (pos < mml.size() && std::isdigit((unsigned char)mml[pos])) {
                     tlen = readInt(mml, pos, st.defLen);
                     uint32_t t0 = st.wholeTick / tlen;
-                    int d = (int)t0;
+                    int d = static_cast<int>(t0);
                     while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
                     ticks += t0;
                 } else {
                     // defLenIsClock時はクロック直接値を使用
                     uint32_t t0 = st.defLenIsClock
-                                  ? (uint32_t)st.defLen : st.wholeTick / st.defLen;
-                    int d = (int)t0;
+                                  ? static_cast<uint32_t>(st.defLen) : st.wholeTick / st.defLen;
+                    int d = static_cast<int>(t0);
                     while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
                     ticks += t0;
                 }
@@ -1658,7 +1658,7 @@ private:
         if (st.tieActive && st.tieNote == noteNum) {
             // 前のNOTE_OFFを探して除去し、新しい位置に再配置
             // （最後のNOTE_OFFイベントを末尾から検索）
-            for (int i = (int)events.size() - 1; i >= 0; i--) {
+            for (int i = static_cast<int>(events.size()) - 1; i >= 0; i--) {
                 if (events[i].type == MmlEventType::NOTE_OFF &&
                     events[i].note == noteNum && events[i].channel == ch) {
                     events.erase(events.begin() + i);
@@ -1668,7 +1668,7 @@ private:
             // NOTE_ONは出さず、NOTE_OFFだけ新しい位置に
             uint32_t keyOnTicks = ticks;
             if (st.staccato > 0) {
-                uint32_t earlyOff = (uint32_t)st.staccato;
+                uint32_t earlyOff = static_cast<uint32_t>(st.staccato);
                 keyOnTicks = (ticks > earlyOff) ? ticks - earlyOff : 1;
             }
 
@@ -1695,7 +1695,7 @@ private:
         if (st.staccato <= 0) {
             keyOnTicks = ticks;
         } else {
-            uint32_t earlyOff = (uint32_t)st.staccato;
+            uint32_t earlyOff = static_cast<uint32_t>(st.staccato);
             keyOnTicks = (ticks > earlyOff) ? ticks - earlyOff : 1;
         }
         if (keyOnTicks == 0) keyOnTicks = 1;

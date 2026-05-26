@@ -330,14 +330,14 @@ public:
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
                 m_engine->writeReg(port, 0xB4 + off,
-                    (uint8_t)(panToReg(m_channels[ch].pan)));
+                    static_cast<uint8_t>(panToReg(m_channels[ch].pan)));
             }
             // SSG: ミキサー復元
             m_engine->writeReg(0, 0x07, m_ssgMixer);
             // リズム: TL + IL復元
             int rhythmAtt = m_globalAtt * 63 / 127;
-            int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
-            m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
+            int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
+            m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
             for (int i = 0; i < 6; i++)
                 m_engine->writeReg(0, 0x18 + i, m_rhythmIL[i]);
             // ADPCM-B: ボリューム復元（ボイス再生中はスキップ）
@@ -356,7 +356,7 @@ public:
     int loopCount() const {
         if (m_commonEndTick == 0 || m_commonEndTick <= m_commonLoopTick) return 0;
         uint32_t loopLen = m_commonEndTick - m_commonLoopTick;
-        return (int)(m_loopTickOffset / loopLen);
+        return static_cast<int>(m_loopTickOffset / loopLen);
     }
 
     // チャンネル状態取得（UI表示用）
@@ -400,7 +400,7 @@ public:
             fmSetVolume(fi, st.volume);
             int port = fmPort(fi);
             int off  = fmOffset(fi);
-            m_engine->writeReg(port, 0xB4 + off, (uint8_t)panToReg(st.pan));
+            m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panToReg(st.pan)));
         } else if (isSSG(ch)) {
             m_engine->writeReg(0, 0x07, m_ssgMixer);
             if (st.ssgSoftEnv) {
@@ -445,7 +445,7 @@ public:
         int voiceTotalAtt = m_masterAtt + m_voiceAtt;
         if (voiceTotalAtt > 0) {
             int voiceVol = std::clamp(255 - voiceTotalAtt * 2, 0, 255);
-            m_engine->writeReg(1, 0x0B, (uint8_t)voiceVol);
+            m_engine->writeReg(1, 0x0B, static_cast<uint8_t>(voiceVol));
         }
     }
     void stopVoice() {
@@ -487,8 +487,8 @@ public:
                 setGlobalAttenuation(0);
             } else {
                 m_duckReleaseSamplesLeft -= frameCount;
-                float t = (float)m_duckReleaseSamplesLeft / m_duckReleaseSamples;
-                int att = (int)(m_duckAttTarget * t);
+                float t = static_cast<float>(m_duckReleaseSamplesLeft) / m_duckReleaseSamples;
+                int att = static_cast<int>(m_duckAttTarget * t);
                 setGlobalAttenuation(att);
             }
         }
@@ -563,7 +563,7 @@ public:
     int playSeSequence(const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15)
     {
         if (!notes || noteCount <= 0) return -1;
-        noteCount = std::clamp(noteCount, 1, (int)SeSlot::MAX_SEQ_NOTES);
+        noteCount = std::clamp(noteCount, 1, static_cast<int>(SeSlot::MAX_SEQ_NOTES));
 
         // 最初のノートのdurationMsでplaySe()と同じスロット確保・音色適用・キーオン
         int slotIdx = playSe(patch, notes[0].startNote, velocity, notes[0].durationMs);
@@ -635,7 +635,7 @@ public:
     // ボイスの音量はplayVoice()でmasterAttのみ適用される。
     void setDucking(int attTarget, float releaseSec = 0.15f) {
         m_duckAttTarget = attTarget;
-        m_duckReleaseSamples = (uint32_t)(releaseSec * m_sampleRate);
+        m_duckReleaseSamples = static_cast<uint32_t>(releaseSec * m_sampleRate);
         m_duckEnabled = (attTarget > 0);
     }
 
@@ -661,44 +661,44 @@ public:
     // vol: 0.0（無音）〜 1.0（最大）。FM TL減衰値に内部変換。
     // ダッキングやフェードとは独立。play()/stop()でリセットされない。
     void setMasterVolume(float vol) {
-        m_masterAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        m_masterAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
         recalcGlobalAtt();
         seRecalcVolume();
     }
     float getMasterVolume() const {
-        return 1.0f - (float)m_masterAtt / 127.0f;
+        return 1.0f - static_cast<float>(m_masterAtt) / 127.0f;
     }
 
     // ── BGMボリューム ──────────────────────────────────
     // vol: 0.0（無音）〜 1.0（最大）。マスターボリュームと加算適用。
     // SE・ボイスには影響しない。play()/stop()でリセットされない。
     void setBgmVolume(float vol) {
-        m_bgmAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        m_bgmAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
         recalcGlobalAtt();
     }
     float getBgmVolume() const {
-        return 1.0f - (float)m_bgmAtt / 127.0f;
+        return 1.0f - static_cast<float>(m_bgmAtt) / 127.0f;
     }
 
     // ── SEボリューム ───────────────────────────────────
     // vol: 0.0（無音）〜 1.0（最大）。マスターボリュームと加算適用。
     // play()/stop()でリセットされない。
     void setSeVolume(float vol) {
-        m_seAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        m_seAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
         seRecalcVolume();
     }
     float getSeVolume() const {
-        return 1.0f - (float)m_seAtt / 127.0f;
+        return 1.0f - static_cast<float>(m_seAtt) / 127.0f;
     }
 
     // ── ボイスボリューム ──────────────────────────────────
     // vol: 0.0（無音）〜 1.0（最大）。マスターボリュームと加算適用。
     // play()/stop()でリセットされない（ゲーム設定として永続）。
     void setVoiceVolume(float vol) {
-        m_voiceAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        m_voiceAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
     }
     float getVoiceVolume() const {
-        return 1.0f - (float)m_voiceAtt / 127.0f;
+        return 1.0f - static_cast<float>(m_voiceAtt) / 127.0f;
     }
 
     // ── フェードアウト/イン ──────────────────────────────
@@ -720,7 +720,7 @@ public:
         }
         m_fadeStartAtt  = m_fadeAtt;
         m_fadeTargetAtt = 127;
-        m_fadeTotalSamples = (uint32_t)(seconds * m_sampleRate);
+        m_fadeTotalSamples = static_cast<uint32_t>(seconds * m_sampleRate);
         m_fadeSamplesLeft  = m_fadeTotalSamples;
         m_fading = true;
     }
@@ -734,7 +734,7 @@ public:
         }
         m_fadeStartAtt  = m_fadeAtt;
         m_fadeTargetAtt = 0;
-        m_fadeTotalSamples = (uint32_t)(seconds * m_sampleRate);
+        m_fadeTotalSamples = static_cast<uint32_t>(seconds * m_sampleRate);
         m_fadeSamplesLeft  = m_fadeTotalSamples;
         m_fading = true;
     }
@@ -797,8 +797,8 @@ public:
                 m_fading = false;
             } else {
                 m_fadeSamplesLeft -= frameCount;
-                float t = 1.0f - (float)m_fadeSamplesLeft / m_fadeTotalSamples;
-                m_fadeAtt = m_fadeStartAtt + (int)((m_fadeTargetAtt - m_fadeStartAtt) * t);
+                float t = 1.0f - static_cast<float>(m_fadeSamplesLeft) / m_fadeTotalSamples;
+                m_fadeAtt = m_fadeStartAtt + static_cast<int>((m_fadeTargetAtt - m_fadeStartAtt) * t);
             }
             recalcGlobalAtt();
         }
@@ -818,7 +818,7 @@ public:
             m_globalSampleAccum -= 16;
             m_audioLeftMs += 16.0 * 1000.0 / m_sampleRate;
 
-            int ms = (int)m_audioLeftMs;
+            int ms = static_cast<int>(m_audioLeftMs);
             if (ms <= 0) continue;
             m_audioLeftMs -= ms;
 
@@ -962,7 +962,7 @@ public:
                         }
                         if (amp > 15) amp = 15;
                         if (amp < 0) amp = 0;
-                        m_engine->writeReg(0, 0x08 + si, (uint8_t)amp);
+                        m_engine->writeReg(0, 0x08 + si, static_cast<uint8_t>(amp));
                     } else if (cst.ssgReleasing) {
                         // Eコマンド未使用の簡易リリース
                         cst.ssgRelVol -= 2;
@@ -970,7 +970,7 @@ public:
                             cst.ssgRelVol = 0;
                             cst.ssgReleasing = false;
                         }
-                        m_engine->writeReg(0, 0x08 + si, (uint8_t)(cst.ssgRelVol & 0x0F));
+                        m_engine->writeReg(0, 0x08 + si, static_cast<uint8_t>(cst.ssgRelVol & 0x0F));
                     }
                 }
 
@@ -1025,7 +1025,7 @@ public:
         uint32_t remaining = frameCount;
         uint32_t offset = 0;
         while (remaining > 0) {
-            uint32_t n = std::min(remaining, (uint32_t)16);
+            uint32_t n = std::min(remaining, static_cast<uint32_t>(16));
             advance(n);
             tickVoiceTimer(n);
             seTickDuration(n);
@@ -1041,17 +1041,17 @@ public:
                 int16_t seBuf[32] = {};
                 m_seEngine->generateInterleaved(seBuf, n);
                 for (uint32_t i = 0; i < n * 2; i++) {
-                    int32_t bgm = (int32_t)bgmBuf[i];
-                    if (m_outputGain != 1.0f) bgm = (int32_t)(bgm * m_outputGain);
-                    int32_t mixed = bgm + (int32_t)seBuf[i];
-                    out[offset * 2 + i] = (int16_t)std::clamp(mixed, (int32_t)-32768, (int32_t)32767);
+                    int32_t bgm = static_cast<int32_t>(bgmBuf[i]);
+                    if (m_outputGain != 1.0f) bgm = static_cast<int32_t>(bgm * m_outputGain);
+                    int32_t mixed = bgm + static_cast<int32_t>(seBuf[i]);
+                    out[offset * 2 + i] = static_cast<int16_t>(std::clamp(mixed, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
                 }
             } else {
                 // Classicモード: BGMのみ（+ ゲイン適用）
                 if (m_outputGain != 1.0f) {
                     for (uint32_t i = 0; i < n * 2; i++) {
-                        int32_t s = (int32_t)(bgmBuf[i] * m_outputGain);
-                        out[offset * 2 + i] = (int16_t)std::clamp(s, (int32_t)-32768, (int32_t)32767);
+                        int32_t s = static_cast<int32_t>(bgmBuf[i] * m_outputGain);
+                        out[offset * 2 + i] = static_cast<int16_t>(std::clamp(s, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
                     }
                 } else {
                     std::memcpy(out + offset * 2, bgmBuf, n * 2 * sizeof(int16_t));
@@ -1185,7 +1185,7 @@ public:
                     // ポルタメント状態の復元（processEvents側と同一ロジック）
                     int startNote = ev.note;
                     int endNote   = ev.value;
-                    int dur       = (int)ev.duration;
+                    int dur       = static_cast<int>(ev.duration);
                     if (dur <= 0) dur = 1;
                     int sb = 0, eb = 0;
                     uint16_t sf = noteToFnum(startNote, sb);
@@ -1245,7 +1245,7 @@ public:
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
                 m_engine->writeReg(port, 0xB4 + off,
-                    (uint8_t)(panToReg(m_channels[ch].pan)));
+                    static_cast<uint8_t>(panToReg(m_channels[ch].pan)));
             }
         }
         m_engine->writeReg(0, 0x07, m_ssgMixer);
@@ -1370,7 +1370,7 @@ public:
             case MmlEventType::PORTAMENTO: {
                 int startNote = ev.note;
                 int endNote   = ev.value;
-                int dur       = (int)ev.duration;
+                int dur       = static_cast<int>(ev.duration);
                 if (dur <= 0) dur = 1;
                 int sb = 0, eb = 0;
                 uint16_t sf = noteToFnum(startNote, sb);
@@ -1416,7 +1416,7 @@ public:
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
                 m_engine->writeReg(port, 0xB4 + off,
-                    (uint8_t)(panToReg(st.pan)));
+                    static_cast<uint8_t>(panToReg(st.pan)));
             }
             if (isSSG(ch)) {
                 m_engine->writeReg(0, 0x07, m_ssgMixer);
@@ -1842,10 +1842,10 @@ private:
                 }
                 // 通常のレジスタ書き込み（yコマンド）
                 int port = (addr >= 0x100) ? 1 : 0;
-                m_engine->writeReg(port, (uint8_t)(addr & 0xFF), (uint8_t)(data & 0xFF));
+                m_engine->writeReg(port, static_cast<uint8_t>(addr & 0xFF), static_cast<uint8_t>(data & 0xFF));
                 // リズム楽器 IL レジスタ（0x18-0x1D）への書き込みを追跡
                 if (addr >= 0x18 && addr <= 0x1D) {
-                    m_rhythmIL[addr - 0x18] = (uint8_t)(data & 0xFF);
+                    m_rhythmIL[addr - 0x18] = static_cast<uint8_t>(data & 0xFF);
                 }
                 break;
             }
@@ -1867,7 +1867,7 @@ private:
                 // Z80 CULPTM→PLLFO→PLSKI2: F-Number(block込み14bit)への毎tick加算
                 int startNote = ev.note;
                 int endNote   = ev.value;
-                int dur       = (int)ev.duration;
+                int dur       = static_cast<int>(ev.duration);
                 if (dur <= 0) dur = 1;
                 // F-Number 14bit = (block << 11) | fnum
                 int sb = 0, eb = 0;
@@ -1907,14 +1907,14 @@ private:
                     int pms  = ev.vibRate & 0x07;
                     int ams  = ev.vibDepth & 0x03;
                     // レジスタ0x22: LFO ON + 周波数
-                    m_engine->writeReg(0, 0x22, (uint8_t)(freq | 0x08));
+                    m_engine->writeReg(0, 0x22, static_cast<uint8_t>(freq | 0x08));
                     // レジスタ0xB4+ch: PANビット保持 + AMS/PMS
                     int fi   = toFMIndex(ch);
                     int port = fmPort(fi);
                     int off  = fmOffset(fi);
                     int panBits = panToReg(st.pan) & 0xC0;
                     m_engine->writeReg(port, 0xB4 + off,
-                        (uint8_t)(panBits | ((ams & 0x03) << 4) | (pms & 0x07)));
+                        static_cast<uint8_t>(panBits | ((ams & 0x03) << 4) | (pms & 0x07)));
                 }
                 break;
             }
@@ -2085,12 +2085,12 @@ private:
             int fi = toFMIndex(ch);
             int port = fmPort(fi);
             int off  = fmOffset(fi);
-            m_engine->writeReg(port, 0xB4 + off, (uint8_t)panToReg(pan));
+            m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panToReg(pan)));
         }
         // SSG: パンなし（モノラル）
         else if (isADPCMB(ch)) {
             // ADPCM-B: Z80 STEREOルーチン互換 — PCMLRにパン値を設定
-            m_pcmPan = (uint8_t)panToReg(pan);
+            m_pcmPan = static_cast<uint8_t>(panToReg(pan));
         }
         else if (isRhythm(ch)) {
             // リズムPAN: MUCOM88形式 p $NN
@@ -2100,7 +2100,7 @@ private:
             int lr   = (pan >> 4) & 0x03;
             if (inst < 6) {
                 // ILレジスタのPANビットのみ更新（レベルは保持）
-                m_rhythmIL[inst] = (uint8_t)((lr << 6) | (m_rhythmIL[inst] & 0x1F));
+                m_rhythmIL[inst] = static_cast<uint8_t>((lr << 6) | (m_rhythmIL[inst] & 0x1F));
             }
         }
     }
@@ -2122,7 +2122,7 @@ private:
         } else if (isRhythm(ch)) {
             // リズム: @N で楽器ビットマスクを設定
             // bit0=BD, bit1=SD, bit2=CY, bit3=HH, bit4=TM, bit5=RS
-            m_rhythmMask = (uint8_t)(patchNo & 0x3F);
+            m_rhythmMask = static_cast<uint8_t>(patchNo & 0x3F);
         } else if (isADPCMB(ch)) {
             // ADPCM-B: @N でPCMサンプル番号を選択
             m_pcmCurrentNum = patchNo;
@@ -2140,8 +2140,8 @@ private:
 
         int tb = 256 - m_globalTempo;
         if (tb <= 0) tb = 1;
-        double calc = (double)tb * TIMER_STEPD;
-        m_timerBPeriod = (int)(calc * 1024.0);  // fmgen互換: int truncation
+        double calc = static_cast<double>(tb) * TIMER_STEPD;
+        m_timerBPeriod = static_cast<int>(calc * 1024.0);  // fmgen互換: int truncation
         if (m_timerBPeriod <= 0) m_timerBPeriod = 1;
     }
 
@@ -2160,12 +2160,12 @@ private:
             if (m_channels[ch].hijacked) continue;
             if (m_channels[ch].noteOn) {
                 int vol = std::clamp(m_channels[ch].volume - m_globalAtt / 4, 0, 15);
-                m_engine->writeReg(0, 0x08 + si, (uint8_t)(vol & 0x0F));
+                m_engine->writeReg(0, 0x08 + si, static_cast<uint8_t>(vol & 0x0F));
             }
         }
         int rhythmAtt = m_globalAtt * 63 / 127;
-        int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
-        m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
+        int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
+        m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
         // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
         if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
             adpcmbSetVolume(m_channels[10].volume);
@@ -2255,23 +2255,23 @@ private:
             int base = slotOff[oi] + off;
             const auto& op = patch.op[oi];
             m_engine->writeReg(port, 0x30 + base,
-                (uint8_t)(((op.dt & 0x07) << 4) | (op.ml & 0x0F)));
-            m_engine->writeReg(port, 0x40 + base, (uint8_t)(op.tl & 0x7F));
+                static_cast<uint8_t>(((op.dt & 0x07) << 4) | (op.ml & 0x0F)));
+            m_engine->writeReg(port, 0x40 + base, static_cast<uint8_t>(op.tl & 0x7F));
             m_engine->writeReg(port, 0x50 + base,
-                (uint8_t)(((op.ks & 0x03) << 6) | (op.ar & 0x1F)));
-            m_engine->writeReg(port, 0x60 + base, (uint8_t)(((op.ame & 1) << 7) | (op.dr & 0x1F)));
-            m_engine->writeReg(port, 0x70 + base, (uint8_t)(op.sr & 0x1F));
+                static_cast<uint8_t>(((op.ks & 0x03) << 6) | (op.ar & 0x1F)));
+            m_engine->writeReg(port, 0x60 + base, static_cast<uint8_t>(((op.ame & 1) << 7) | (op.dr & 0x1F)));
+            m_engine->writeReg(port, 0x70 + base, static_cast<uint8_t>(op.sr & 0x1F));
             m_engine->writeReg(port, 0x80 + base,
-                (uint8_t)(((op.sl & 0x0F) << 4) | (op.rr & 0x0F)));
+                static_cast<uint8_t>(((op.sl & 0x0F) << 4) | (op.rr & 0x0F)));
         }
 
         // FB/ALG
         m_engine->writeReg(port, 0xB0 + off,
-            (uint8_t)(((patch.fb & 0x07) << 3) | (patch.al & 0x07)));
+            static_cast<uint8_t>(((patch.fb & 0x07) << 3) | (patch.al & 0x07)));
         // パン
         int mmlCh = (fi < 3) ? fi : (fi - 3 + 7);
         int panBits = panToReg(m_channels[mmlCh].pan);
-        m_engine->writeReg(port, 0xB4 + off, (uint8_t)panBits);
+        m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panBits));
     }
 
     // ── ソフトウェアLFO tick処理 ──────────────────────────
@@ -2328,8 +2328,8 @@ private:
             int port = fmPort(fi);
             int off  = fmOffset(fi);
             m_engine->writeReg(port, 0xA4 + off,
-                (uint8_t)(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
-            m_engine->writeReg(port, 0xA0 + off, (uint8_t)(fnum & 0xFF));
+                static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
+            m_engine->writeReg(port, 0xA0 + off, static_cast<uint8_t>(fnum & 0xFF));
         } else if (isSSG(ch)) {
             // SSG: 14bit block|fnum → SSGトーンピリオドに変換
             // PLLFO PLSKI2のSSG部: fnum >> octave でスケーリング
@@ -2338,8 +2338,8 @@ private:
             // blockからオクターブシフト（block大→ピリオド小）
             if (block > 0) tp >>= block;
             tp = std::clamp(tp, 1, 0xFFF);
-            m_engine->writeReg(0, si * 2,     (uint8_t)(tp & 0xFF));
-            m_engine->writeReg(0, si * 2 + 1, (uint8_t)((tp >> 8) & 0x0F));
+            m_engine->writeReg(0, si * 2,     static_cast<uint8_t>(tp & 0xFF));
+            m_engine->writeReg(0, si * 2 + 1, static_cast<uint8_t>((tp >> 8) & 0x0F));
         }
     }
 
@@ -2361,12 +2361,12 @@ private:
         int pitchOffset = st.detune + st.lfoPitchOffset;
         int block = 4;
         uint16_t fnum = noteToFnum(noteNum, block);
-        int adjusted = (int)fnum + pitchOffset;
+        int adjusted = static_cast<int>(fnum) + pitchOffset;
         while (adjusted > 0x7FF && block < 7) { adjusted >>= 1; block++; }
         while (adjusted < 0 && block > 0)     { adjusted <<= 1; block--; }
         if (adjusted < 0) adjusted = 0;
         if (adjusted > 0x7FF) adjusted = 0x7FF;
-        fnum = (uint16_t)adjusted;
+        fnum = static_cast<uint16_t>(adjusted);
 
         // 基準F-Number（16bit: block<<11 | fnum）
         int baseFnum = ((block & 0x07) << 11) | (fnum & 0x7FF);
@@ -2388,8 +2388,8 @@ private:
 
             // F-Number書き込み（MSB→LSBの順、Z80 FMSUB6互換）
             m_engine->writeReg(0, msbRegs[op],
-                (uint8_t)(((opBlock & 0x07) << 3) | ((opFn >> 8) & 0x07)));
-            m_engine->writeReg(0, lsbRegs[op], (uint8_t)(opFn & 0xFF));
+                static_cast<uint8_t>(((opBlock & 0x07) << 3) | ((opFn >> 8) & 0x07)));
+            m_engine->writeReg(0, lsbRegs[op], static_cast<uint8_t>(opFn & 0xFF));
 
             // KEY ON（Z80 FMSUB6→FMSUB7→KEYON: 毎オペレータF-Number書き込み後にKEY ON）
             m_engine->writeReg(0, 0x28, keyOnData);
@@ -2416,7 +2416,7 @@ private:
         int block = 4;
         uint16_t fnum = noteToFnum(noteNum, block);
         // ピッチオフセット適用（F-Number直接加算）
-        int adjusted = (int)fnum + pitchOffset;
+        int adjusted = static_cast<int>(fnum) + pitchOffset;
         // ブロック境界のキャリー処理
         while (adjusted > 0x7FF && block < 7) {
             adjusted >>= 1;
@@ -2426,11 +2426,11 @@ private:
             adjusted <<= 1;
             block--;
         }
-        fnum = (uint16_t)std::clamp(adjusted, 0, 0x7FF);
+        fnum = static_cast<uint16_t>(std::clamp(adjusted, 0, 0x7FF));
 
         m_engine->writeReg(port, 0xA4 + off,
-            (uint8_t)(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
-        m_engine->writeReg(port, 0xA0 + off, (uint8_t)(fnum & 0xFF));
+            static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
+        m_engine->writeReg(port, 0xA0 + off, static_cast<uint8_t>(fnum & 0xFF));
     }
 
     void fmUpdateFreq(int fi, int noteNum, int pitchOffset)
@@ -2446,15 +2446,15 @@ private:
         int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfoPitchOffset;
         fmWriteFreq(fi, noteNum, offset);
 
-        uint8_t chKey = (fi < 3) ? (uint8_t)fi : (uint8_t)(fi - 3 + 4);
-        m_engine->writeReg(0, 0x28, (uint8_t)(0xF0 | chKey));
+        uint8_t chKey = (fi < 3) ? static_cast<uint8_t>(fi) : static_cast<uint8_t>(fi - 3 + 4);
+        m_engine->writeReg(0, 0x28, static_cast<uint8_t>(0xF0 | chKey));
     }
 
     void fmKeyOff(int fi)
     {
         if (!m_engine) return;
-        uint8_t chKey = (fi < 3) ? (uint8_t)fi : (uint8_t)(fi - 3 + 4);
-        m_engine->writeReg(0, 0x28, (uint8_t)(0x00 | chKey));
+        uint8_t chKey = (fi < 3) ? static_cast<uint8_t>(fi) : static_cast<uint8_t>(fi - 3 + 4);
+        m_engine->writeReg(0, 0x28, static_cast<uint8_t>(0x00 | chKey));
     }
 
     static constexpr int carrierOffsets[8][4] = {
@@ -2481,7 +2481,7 @@ private:
             int so = carrierOffsets[al & 7][oi];
             if (so < 0) break;
             int tl = std::clamp(tlBase + m_globalAtt, 0, 127);
-            m_engine->writeReg(port, 0x40 + so + off, (uint8_t)tl);
+            m_engine->writeReg(port, 0x40 + so + off, static_cast<uint8_t>(tl));
         }
     }
 
@@ -2514,10 +2514,10 @@ private:
         if (!m_engine) return;
         uint16_t tp = noteToSSGPeriod(noteNum, m_chipClock);
         // SSG: ピリオド値にオフセット（符号反転: F-Number増=周波数上昇=ピリオド減少）
-        int adjusted = (int)tp - pitchOffset;
-        tp = (uint16_t)std::clamp(adjusted, 1, 0xFFF);
-        m_engine->writeReg(0, si * 2,     (uint8_t)(tp & 0xFF));
-        m_engine->writeReg(0, si * 2 + 1, (uint8_t)((tp >> 8) & 0x0F));
+        int adjusted = static_cast<int>(tp) - pitchOffset;
+        tp = static_cast<uint16_t>(std::clamp(adjusted, 1, 0xFFF));
+        m_engine->writeReg(0, si * 2,     static_cast<uint8_t>(tp & 0xFF));
+        m_engine->writeReg(0, si * 2 + 1, static_cast<uint8_t>((tp >> 8) & 0x0F));
     }
 
     void ssgUpdateFreq(int si, int noteNum, int pitchOffset)
@@ -2539,7 +2539,7 @@ private:
 
         // 振幅設定
         int vol = std::clamp(m_channels[mmlCh].volume - m_globalAtt / 4, 0, 15);
-        uint8_t ampReg = (uint8_t)(vol & 0x0F);
+        uint8_t ampReg = static_cast<uint8_t>(vol & 0x0F);
         if (m_channels[mmlCh].ssgEnvMode) ampReg |= 0x10;
         m_engine->writeReg(0, 0x08 + si, ampReg);
     }
@@ -2585,7 +2585,7 @@ private:
         int mmlCh = si + 3;
         if (m_channels[mmlCh].noteOn) {
             int v = std::clamp(vol - m_globalAtt / 4, 0, 15);
-            uint8_t ampReg = (uint8_t)(v & 0x0F);
+            uint8_t ampReg = static_cast<uint8_t>(v & 0x0F);
             if (m_channels[mmlCh].ssgEnvMode) ampReg |= 0x10;
             m_engine->writeReg(0, 0x08 + si, ampReg);
         }
@@ -2680,10 +2680,10 @@ public:
     {
         std::ifstream ifs(path, std::ios::binary | std::ios::ate);
         if (!ifs) return false;
-        size_t sz = (size_t)ifs.tellg();
+        size_t sz = static_cast<size_t>(ifs.tellg());
         ifs.seekg(0);
         std::vector<uint8_t> buf(sz);
-        ifs.read((char*)buf.data(), sz);
+        ifs.read(reinterpret_cast<char*>(buf.data()), sz);
         return loadPcmData(buf.data(), sz);
     }
 
@@ -2704,10 +2704,10 @@ public:
     {
         std::ifstream ifs(path, std::ios::binary | std::ios::ate);
         if (!ifs) return false;
-        size_t sz = (size_t)ifs.tellg();
+        size_t sz = static_cast<size_t>(ifs.tellg());
         ifs.seekg(0);
         std::vector<uint8_t> buf(sz);
-        ifs.read((char*)buf.data(), sz);
+        ifs.read(reinterpret_cast<char*>(buf.data()), sz);
         return loadPcmBinary(buf.data(), sz);
     }
 
@@ -2733,7 +2733,7 @@ private:
         uint32_t dn = PCMNMB[semi];
         if (shift > 0) dn >>= shift;
         else if (shift < 0) dn <<= (-shift);  // o1より高いオクターブ
-        return (uint16_t)(dn & 0xFFFF);
+        return static_cast<uint16_t>(dn & 0xFFFF);
     }
 
     void adpcmbKeyOn(int noteNum)
@@ -2760,15 +2760,15 @@ private:
         m_engine->writeReg(1, 0x00, 0x21);              // reset
         m_engine->writeReg(1, 0x10, 0x08);              // flag
         m_engine->writeReg(1, 0x10, 0x80);              // flag
-        m_engine->writeReg(1, 0x02, (uint8_t)(pcm.startAddr & 0xFF));
-        m_engine->writeReg(1, 0x03, (uint8_t)(pcm.startAddr >> 8));
-        m_engine->writeReg(1, 0x04, (uint8_t)(pcm.endAddr & 0xFF));
-        m_engine->writeReg(1, 0x05, (uint8_t)(pcm.endAddr >> 8));
-        m_engine->writeReg(1, 0x09, (uint8_t)(deltaN & 0xFF));
-        m_engine->writeReg(1, 0x0A, (uint8_t)(deltaN >> 8));
+        m_engine->writeReg(1, 0x02, static_cast<uint8_t>(pcm.startAddr & 0xFF));
+        m_engine->writeReg(1, 0x03, static_cast<uint8_t>(pcm.startAddr >> 8));
+        m_engine->writeReg(1, 0x04, static_cast<uint8_t>(pcm.endAddr & 0xFF));
+        m_engine->writeReg(1, 0x05, static_cast<uint8_t>(pcm.endAddr >> 8));
+        m_engine->writeReg(1, 0x09, static_cast<uint8_t>(deltaN & 0xFF));
+        m_engine->writeReg(1, 0x0A, static_cast<uint8_t>(deltaN >> 8));
         m_engine->writeReg(1, 0x00, 0xA0);              // start playback
-        m_engine->writeReg(1, 0x0B, (uint8_t)finalVol);  // volume
-        m_engine->writeReg(1, 0x01, (uint8_t)(m_pcmPan)); // L/R
+        m_engine->writeReg(1, 0x0B, static_cast<uint8_t>(finalVol));  // volume
+        m_engine->writeReg(1, 0x01, static_cast<uint8_t>(m_pcmPan)); // L/R
     }
 
     void adpcmbKeyOff()
@@ -2785,7 +2785,7 @@ private:
         if (m_pcmVolMode != 0) finalVol += m_pcmAddVol;
         if (finalVol > 250) finalVol = 250;
         if (finalVol < 0) finalVol = 0;
-        m_engine->writeReg(1, 0x0B, (uint8_t)finalVol);
+        m_engine->writeReg(1, 0x0B, static_cast<uint8_t>(finalVol));
     }
 
     // =====================================================================
@@ -2801,7 +2801,7 @@ private:
         for (int oi = 0; oi < 4; oi++) {
             int so = carrierOffsets[al & 7][oi];
             if (so < 0) break;
-            engine->writeReg(port, 0x40 + so + off, (uint8_t)std::clamp(tl, 0, 127));
+            engine->writeReg(port, 0x40 + so + off, static_cast<uint8_t>(std::clamp(tl, 0, 127)));
         }
     }
 
@@ -2868,7 +2868,7 @@ private:
         slot.patch = patch;
         slot.noteNum = noteNum;
         slot.velocity = velocity;
-        slot.durationSamples = (durationMs > 0) ? (uint32_t)((uint64_t)durationMs * m_sampleRate / 1000) : 0;
+        slot.durationSamples = (durationMs > 0) ? static_cast<uint32_t>(static_cast<uint64_t>(durationMs) * m_sampleRate / 1000) : 0;
         slot.samplesLeft = slot.durationSamples;
         return slotIdx;
     }
@@ -2892,7 +2892,7 @@ private:
         slot.patch = patch;
         slot.noteNum = noteNum;
         slot.velocity = velocity;
-        slot.durationSamples = (durationMs > 0) ? (uint32_t)((uint64_t)durationMs * m_sampleRate / 1000) : 0;
+        slot.durationSamples = (durationMs > 0) ? static_cast<uint32_t>(static_cast<uint64_t>(durationMs) * m_sampleRate / 1000) : 0;
         slot.samplesLeft = slot.durationSamples;
         return slotIdx;
     }
@@ -2909,12 +2909,12 @@ private:
                 const auto& curNote = slot.seqNotes[slot.seqCurrentNote];
                 if (curNote.endNote >= 0 && slot.durationSamples > 0) {
                     // 進行率: 0.0（開始）→ 1.0（終了）
-                    float progress = 1.0f - (float)slot.samplesLeft / (float)slot.durationSamples;
+                    float progress = 1.0f - static_cast<float>(slot.samplesLeft) / static_cast<float>(slot.durationSamples);
                     progress = std::clamp(progress, 0.0f, 1.0f);
                     // startNote → endNote を浮動小数点で補間し、整数に丸める
-                    float interpNote = (float)curNote.startNote
-                                     + ((float)curNote.endNote - (float)curNote.startNote) * progress;
-                    int newNote = (int)std::round(interpNote);
+                    float interpNote = static_cast<float>(curNote.startNote)
+                                     + (static_cast<float>(curNote.endNote) - static_cast<float>(curNote.startNote)) * progress;
+                    int newNote = static_cast<int>(std::round(interpNote));
                     if (newNote != slot.noteNum)
                         setSeFrequency(i, newNote);
                 }
@@ -2926,7 +2926,7 @@ private:
                     slot.seqCurrentNote++;
                     const auto& nextNote = slot.seqNotes[slot.seqCurrentNote];
                     // 新しいノートのdurationを設定
-                    slot.durationSamples = (uint32_t)((uint64_t)nextNote.durationMs * m_sampleRate / 1000);
+                    slot.durationSamples = static_cast<uint32_t>(static_cast<uint64_t>(nextNote.durationMs) * m_sampleRate / 1000);
                     slot.samplesLeft = slot.durationSamples;
                     slot.noteNum = nextNote.startNote;
                     // パッチ再適用なしで周波数変更 + KEY_ON（レガート遷移）
@@ -2985,8 +2985,8 @@ private:
         // 全体音量TL（MUCOM88互換: vコマンドの全体音量値を毎回書き込み）
         // m_globalAtt を反映（マスターボリューム・BGMボリューム・フェード・ダッキング対応）
         int rhythmAtt = m_globalAtt * 63 / 127;
-        int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
-        m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
+        int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
+        m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
         // キーオン（bit7=0）
         m_engine->writeReg(0, 0x10, m_rhythmMask & 0x3F);
     }
@@ -3002,7 +3002,7 @@ private:
     {
         if (!m_engine) return;
         // MUCOM88 リズム音量: v 0-63（全体音量）
-        m_rhythmTL = (uint8_t)(std::clamp(vol, 0, 63) & 0x3F);
+        m_rhythmTL = static_cast<uint8_t>(std::clamp(vol, 0, 63) & 0x3F);
         m_engine->writeReg(0, 0x11, m_rhythmTL);
     }
 };
