@@ -268,6 +268,9 @@ public:
             m_engine->writeReg(0, 0x07, m_ssgMixer);
             // SSG ノイズ周期
             m_engine->writeReg(0, 0x06, 0x00);
+            // プリスケーラ + FM6chモード（reset()後にデフォルトに戻るため再設定必須）
+            m_engine->writeReg(0, 0x2D, 0x00);  // プリスケーラ mode 0 (×6)
+            m_engine->writeReg(0, 0x29, 0x80);  // FM6chモード有効（ch4-6使用に必要）
             // Timer制御: 通常モード（CSMモード解除）
             // Z80 PLSET2: reg 0x27 = 0x3A（Timer-B有効、CSMなし）
             m_engine->writeReg(0, 0x27, 0x3A);
