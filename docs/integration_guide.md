@@ -278,7 +278,7 @@ for (uint32_t i = 0; i < frameCount * 2; i++)
 
 ## 音量制御
 
-![3-Layer Volume Architecture](diagrams/volume_architecture.svg)
+![4-Layer Volume Architecture](diagrams/volume_architecture.svg)
 
 ### マスターボリューム
 
@@ -390,6 +390,8 @@ engine.renderMixed(out, frameCount);
 **Richモード時はBGMのみにゲインを適用し、SEは等倍で加算する。**
 これにより2チップ混合時のクリッピングを防止する。SEの音量は `setSeVolume()` で調整可能。
 デフォルト値: **1.0**（ゲインなし、現行動作と後方互換）。
+
+![Rich Mode Mixing](diagrams/rich_mode_mixing.svg)
 
 ## SEモード（Classic / Rich）
 

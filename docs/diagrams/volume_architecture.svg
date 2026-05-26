@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 520" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
   <defs>
     <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
       <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.08"/>
@@ -6,125 +6,154 @@
     <marker id="arr-d" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
       <path d="M0,0 L10,3 L0,6 Z" fill="#455A64"/>
     </marker>
-    <marker id="arr-g" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
-      <path d="M0,0 L10,3 L0,6 Z" fill="#2E7D32"/>
-    </marker>
   </defs>
 
   <!-- Background -->
-  <rect width="720" height="440" fill="#FAFBFC" rx="6"/>
+  <rect width="760" height="520" fill="#FAFBFC" rx="6"/>
 
   <!-- Title -->
-  <text x="360" y="28" text-anchor="middle" font-size="15" font-weight="600" fill="#263238" letter-spacing="0.5">3-Layer Volume Architecture</text>
-  <line x1="220" y1="38" x2="500" y2="38" stroke="#CFD8DC" stroke-width="0.5"/>
+  <text x="380" y="28" text-anchor="middle" font-size="15" font-weight="600" fill="#263238" letter-spacing="0.5">4-Layer Volume Architecture</text>
+  <line x1="220" y1="38" x2="540" y2="38" stroke="#CFD8DC" stroke-width="0.5"/>
 
-  <!-- ==================== 3 Layers ==================== -->
+  <!-- ==================== 4 Layers ==================== -->
 
   <!-- Layer 1: Master Volume -->
   <g filter="url(#shadow)">
-    <rect x="60" y="55" width="190" height="70" rx="8" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.5"/>
+    <rect x="20" y="52" width="170" height="70" rx="8" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.5"/>
   </g>
-  <rect x="65" y="59" width="72" height="13" rx="6" fill="#2E7D32"/>
-  <text x="101" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">PERSISTENT</text>
-  <text x="155" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="#1B5E20">Master Volume</text>
-  <text x="155" y="100" text-anchor="middle" font-size="9" fill="#2E7D32">setMasterVolume(0.0-1.0)</text>
-  <text x="155" y="115" text-anchor="middle" font-size="8" fill="#78909C">play()/stop() reset: No</text>
+  <rect x="25" y="56" width="72" height="13" rx="6" fill="#2E7D32"/>
+  <text x="61" y="66" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">PERSISTENT</text>
+  <text x="105" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#1B5E20">Master Volume</text>
+  <text x="105" y="96" text-anchor="middle" font-size="8.5" fill="#2E7D32">setMasterVolume()</text>
+  <text x="105" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">BGM + SE + Voice 全体</text>
 
-  <!-- Layer 2: Fade -->
+  <!-- Layer 2: BGM Volume -->
   <g filter="url(#shadow)">
-    <rect x="265" y="55" width="190" height="70" rx="8" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.5"/>
+    <rect x="205" y="52" width="170" height="70" rx="8" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.5"/>
   </g>
-  <rect x="270" y="59" width="72" height="13" rx="6" fill="#1565C0"/>
-  <text x="306" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">TRANSIENT</text>
-  <text x="360" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="#0D47A1">Fade</text>
-  <text x="360" y="100" text-anchor="middle" font-size="9" fill="#1565C0">fadeOut() / fadeIn()</text>
-  <text x="360" y="115" text-anchor="middle" font-size="8" fill="#78909C">play()/stop() reset: Yes</text>
+  <rect x="210" y="56" width="72" height="13" rx="6" fill="#2E7D32"/>
+  <text x="246" y="66" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">PERSISTENT</text>
+  <text x="290" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#1B5E20">BGM Volume</text>
+  <text x="290" y="96" text-anchor="middle" font-size="8.5" fill="#2E7D32">setBgmVolume()</text>
+  <text x="290" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">BGM専用</text>
 
-  <!-- Layer 3: Ducking -->
+  <!-- Layer 3: Fade -->
   <g filter="url(#shadow)">
-    <rect x="470" y="55" width="190" height="70" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.5"/>
+    <rect x="390" y="52" width="170" height="70" rx="8" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.5"/>
   </g>
-  <rect x="475" y="59" width="72" height="13" rx="6" fill="#E65100"/>
-  <text x="511" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">AUTO</text>
-  <text x="565" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="#E65100">Ducking</text>
-  <text x="565" y="100" text-anchor="middle" font-size="9" fill="#F57F17">setDucking(att, sec)</text>
-  <text x="565" y="115" text-anchor="middle" font-size="8" fill="#78909C">play()/stop() reset: Yes</text>
+  <rect x="395" y="56" width="72" height="13" rx="6" fill="#1565C0"/>
+  <text x="431" y="66" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">TRANSIENT</text>
+  <text x="475" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#0D47A1">Fade</text>
+  <text x="475" y="96" text-anchor="middle" font-size="8.5" fill="#1565C0">fadeOut() / fadeIn()</text>
+  <text x="475" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: Yes</text>
+
+  <!-- Layer 4: Ducking -->
+  <g filter="url(#shadow)">
+    <rect x="575" y="52" width="170" height="70" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.5"/>
+  </g>
+  <rect x="580" y="56" width="72" height="13" rx="6" fill="#E65100"/>
+  <text x="616" y="66" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">AUTO</text>
+  <text x="660" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#E65100">Ducking</text>
+  <text x="660" y="96" text-anchor="middle" font-size="8.5" fill="#F57F17">setDucking(att, sec)</text>
+  <text x="660" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: Yes</text>
 
   <!-- ==================== Sum ==================== -->
-  <!-- Arrows from 3 layers to sum -->
-  <line x1="155" y1="125" x2="155" y2="155" stroke="#2E7D32" stroke-width="1.5"/>
-  <line x1="360" y1="125" x2="360" y2="155" stroke="#1565C0" stroke-width="1.5"/>
-  <line x1="565" y1="125" x2="565" y2="155" stroke="#E65100" stroke-width="1.5"/>
+  <!-- Arrows from 4 layers to sum -->
+  <line x1="105" y1="122" x2="105" y2="148" stroke="#2E7D32" stroke-width="1.5"/>
+  <line x1="290" y1="122" x2="290" y2="148" stroke="#2E7D32" stroke-width="1.5"/>
+  <line x1="475" y1="122" x2="475" y2="148" stroke="#1565C0" stroke-width="1.5"/>
+  <line x1="660" y1="122" x2="660" y2="148" stroke="#E65100" stroke-width="1.5"/>
 
-  <line x1="155" y1="155" x2="360" y2="170" stroke="#455A64" stroke-width="1.5"/>
-  <line x1="360" y1="155" x2="360" y2="170" stroke="#455A64" stroke-width="1.5"/>
-  <line x1="565" y1="155" x2="360" y2="170" stroke="#455A64" stroke-width="1.5"/>
+  <line x1="105" y1="148" x2="380" y2="162" stroke="#455A64" stroke-width="1.2"/>
+  <line x1="290" y1="148" x2="380" y2="162" stroke="#455A64" stroke-width="1.2"/>
+  <line x1="475" y1="148" x2="380" y2="162" stroke="#455A64" stroke-width="1.2"/>
+  <line x1="660" y1="148" x2="380" y2="162" stroke="#455A64" stroke-width="1.2"/>
 
   <!-- Sum box -->
   <g filter="url(#shadow)">
-    <rect x="200" y="174" width="320" height="40" rx="8" fill="#ECEFF1" stroke="#B0BEC5" stroke-width="1.5"/>
+    <rect x="130" y="166" width="500" height="40" rx="8" fill="#ECEFF1" stroke="#B0BEC5" stroke-width="1.5"/>
   </g>
-  <text x="360" y="195" text-anchor="middle" font-size="11" font-weight="700" fill="#37474F">globalAtt = clamp(masterAtt + fadeAtt + duckAtt, 0, 127)</text>
-  <text x="360" y="208" text-anchor="middle" font-size="8" fill="#78909C">FM TL unit (0=max, 127=mute)</text>
-  <line x1="360" y1="170" x2="360" y2="174" stroke="#455A64" stroke-width="1.5" marker-end="url(#arr-d)"/>
+  <text x="380" y="187" text-anchor="middle" font-size="10.5" font-weight="700" fill="#37474F">globalAtt = clamp(masterAtt + bgmAtt + fadeAtt + duckAtt, 0, 127)</text>
+  <text x="380" y="200" text-anchor="middle" font-size="8" fill="#78909C">FM TL unit (0=max, 127=mute)</text>
+  <line x1="380" y1="162" x2="380" y2="166" stroke="#455A64" stroke-width="1.5" marker-end="url(#arr-d)"/>
 
   <!-- ==================== Per-channel scaling ==================== -->
-  <line x1="360" y1="214" x2="360" y2="230" stroke="#455A64" stroke-width="1.5"/>
+  <line x1="380" y1="206" x2="380" y2="222" stroke="#455A64" stroke-width="1.5"/>
 
   <!-- Fan out -->
-  <line x1="360" y1="230" x2="110" y2="250" stroke="#455A64" stroke-width="1"/>
-  <line x1="360" y1="230" x2="280" y2="250" stroke="#455A64" stroke-width="1"/>
-  <line x1="360" y1="230" x2="450" y2="250" stroke="#455A64" stroke-width="1"/>
-  <line x1="360" y1="230" x2="610" y2="250" stroke="#455A64" stroke-width="1"/>
+  <line x1="380" y1="222" x2="110" y2="242" stroke="#455A64" stroke-width="1"/>
+  <line x1="380" y1="222" x2="300" y2="242" stroke="#455A64" stroke-width="1"/>
+  <line x1="380" y1="222" x2="480" y2="242" stroke="#455A64" stroke-width="1"/>
+  <line x1="380" y1="222" x2="660" y2="242" stroke="#455A64" stroke-width="1"/>
 
   <!-- FM -->
   <g filter="url(#shadow)">
-    <rect x="40" y="255" width="140" height="65" rx="8" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.2"/>
+    <rect x="35" y="247" width="150" height="60" rx="8" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.2"/>
   </g>
-  <text x="110" y="275" text-anchor="middle" font-size="10" font-weight="600" fill="#1B5E20">FM (A-C, H-J)</text>
-  <line x1="50" y1="282" x2="170" y2="282" stroke="#C8E6C9" stroke-width="0.5"/>
-  <text x="110" y="296" text-anchor="middle" font-size="9" fill="#37474F">carrier TL + att</text>
-  <text x="110" y="310" text-anchor="middle" font-size="8" fill="#78909C">TL: 0=max, 127=mute</text>
+  <text x="110" y="267" text-anchor="middle" font-size="10" font-weight="600" fill="#1B5E20">FM (A-C, H-J)</text>
+  <line x1="45" y1="274" x2="175" y2="274" stroke="#C8E6C9" stroke-width="0.5"/>
+  <text x="110" y="288" text-anchor="middle" font-size="9" fill="#37474F">carrier TL + att</text>
+  <text x="110" y="300" text-anchor="middle" font-size="8" fill="#78909C">TL: 0=max, 127=mute</text>
 
   <!-- SSG -->
   <g filter="url(#shadow)">
-    <rect x="210" y="255" width="140" height="65" rx="8" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.2"/>
+    <rect x="220" y="247" width="150" height="60" rx="8" fill="#E3F2FD" stroke="#90CAF9" stroke-width="1.2"/>
   </g>
-  <text x="280" y="275" text-anchor="middle" font-size="10" font-weight="600" fill="#0D47A1">SSG (D-F)</text>
-  <line x1="220" y1="282" x2="340" y2="282" stroke="#BBDEFB" stroke-width="0.5"/>
-  <text x="280" y="296" text-anchor="middle" font-size="9" fill="#37474F">amp - att/4</text>
-  <text x="280" y="310" text-anchor="middle" font-size="8" fill="#78909C">amp: 0-15</text>
+  <text x="295" y="267" text-anchor="middle" font-size="10" font-weight="600" fill="#0D47A1">SSG (D-F)</text>
+  <line x1="230" y1="274" x2="360" y2="274" stroke="#BBDEFB" stroke-width="0.5"/>
+  <text x="295" y="288" text-anchor="middle" font-size="9" fill="#37474F">amp - att/4</text>
+  <text x="295" y="300" text-anchor="middle" font-size="8" fill="#78909C">amp: 0-15</text>
 
   <!-- ADPCM-A -->
   <g filter="url(#shadow)">
-    <rect x="380" y="255" width="140" height="65" rx="8" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1.2"/>
+    <rect x="405" y="247" width="150" height="60" rx="8" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1.2"/>
   </g>
-  <text x="450" y="275" text-anchor="middle" font-size="10" font-weight="600" fill="#6A1B9A">ADPCM-A (G)</text>
-  <line x1="390" y1="282" x2="510" y2="282" stroke="#E1BEE7" stroke-width="0.5"/>
-  <text x="450" y="296" text-anchor="middle" font-size="9" fill="#37474F">TL - att*63/127</text>
-  <text x="450" y="310" text-anchor="middle" font-size="8" fill="#78909C">TL: 0-63</text>
+  <text x="480" y="267" text-anchor="middle" font-size="10" font-weight="600" fill="#6A1B9A">ADPCM-A (G)</text>
+  <line x1="415" y1="274" x2="545" y2="274" stroke="#E1BEE7" stroke-width="0.5"/>
+  <text x="480" y="288" text-anchor="middle" font-size="9" fill="#37474F">TL - att*63/127</text>
+  <text x="480" y="300" text-anchor="middle" font-size="8" fill="#78909C">TL: 0-63</text>
 
   <!-- ADPCM-B -->
   <g filter="url(#shadow)">
-    <rect x="540" y="255" width="140" height="65" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.2"/>
+    <rect x="585" y="247" width="150" height="60" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.2"/>
   </g>
-  <text x="610" y="275" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">ADPCM-B (K)</text>
-  <line x1="550" y1="282" x2="670" y2="282" stroke="#FFE0B2" stroke-width="0.5"/>
-  <text x="610" y="296" text-anchor="middle" font-size="9" fill="#37474F">vol - att*2</text>
-  <text x="610" y="310" text-anchor="middle" font-size="8" fill="#78909C">vol: 0=mute, 255=max</text>
+  <text x="660" y="267" text-anchor="middle" font-size="10" font-weight="600" fill="#E65100">ADPCM-B (K)</text>
+  <line x1="595" y1="274" x2="725" y2="274" stroke="#FFE0B2" stroke-width="0.5"/>
+  <text x="660" y="288" text-anchor="middle" font-size="9" fill="#37474F">vol - att*2</text>
+  <text x="660" y="300" text-anchor="middle" font-size="8" fill="#78909C">vol: 0=mute, 255=max</text>
 
-  <!-- ==================== SE Volume (separate path) ==================== -->
+  <!-- ==================== Separator ==================== -->
+  <line x1="30" y1="330" x2="730" y2="330" stroke="#CFD8DC" stroke-width="0.5" stroke-dasharray="6,3"/>
+  <text x="380" y="347" text-anchor="middle" font-size="9" font-weight="600" fill="#90A4AE">SE / Voice: independent path (fade/ducking not applied)</text>
+
+  <!-- ==================== SE Volume ==================== -->
   <g filter="url(#shadow)">
-    <rect x="60" y="350" width="600" height="50" rx="6" fill="#FAFBFC" stroke="#ECEFF1" stroke-width="0.5"/>
+    <rect x="30" y="362" width="340" height="70" rx="8" fill="#FBE9E7" stroke="#FFAB91" stroke-width="1.2"/>
   </g>
-  <text x="360" y="370" text-anchor="middle" font-size="10" font-weight="600" fill="#455A64">SE Volume Path (separate)</text>
-  <text x="130" y="390" font-size="8.5" fill="#37474F">masterAtt + seAtt</text>
-  <text x="310" y="390" font-size="8.5" fill="#78909C">Fade/Ducking not applied</text>
-  <text x="510" y="390" font-size="8.5" fill="#78909C">play()/stop() reset: No</text>
+  <rect x="35" y="366" width="24" height="13" rx="6" fill="#BF360C"/>
+  <text x="47" y="376" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SE</text>
+  <text x="200" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#BF360C">SE Volume</text>
+  <text x="200" y="402" text-anchor="middle" font-size="9" fill="#D84315">setSeVolume() + setMasterVolume()</text>
+  <text x="200" y="418" text-anchor="middle" font-size="8.5" fill="#37474F">seAtt = masterAtt + seAtt    (carrier TL)</text>
+  <text x="200" y="428" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: No</text>
 
-  <!-- SE badge -->
-  <rect x="65" y="354" width="40" height="13" rx="6" fill="#E65100"/>
-  <text x="85" y="364" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SE</text>
+  <!-- ==================== Voice Volume ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="390" y="362" width="340" height="70" rx="8" fill="#F3E5F5" stroke="#CE93D8" stroke-width="1.2"/>
+  </g>
+  <rect x="395" y="366" width="42" height="13" rx="6" fill="#6A1B9A"/>
+  <text x="416" y="376" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">VOICE</text>
+  <text x="560" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#6A1B9A">Voice Volume</text>
+  <text x="560" y="402" text-anchor="middle" font-size="9" fill="#7B1FA2">setVoiceVolume() + setMasterVolume()</text>
+  <text x="560" y="418" text-anchor="middle" font-size="8.5" fill="#37474F">voiceAtt = masterAtt + voiceAtt    (ADPCM-B vol)</text>
+  <text x="560" y="428" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: No</text>
 
-  <text x="700" y="433" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
+  <!-- ==================== Output note ==================== -->
+  <g filter="url(#shadow)">
+    <rect x="130" y="458" width="500" height="40" rx="8" fill="#F5F5F5" stroke="#E0E0E0" stroke-width="1"/>
+  </g>
+  <text x="380" y="476" text-anchor="middle" font-size="9" font-weight="600" fill="#455A64">renderMixed() output</text>
+  <text x="380" y="490" text-anchor="middle" font-size="8" fill="#78909C">Rich: BGM*outputGain + SE (unity)    Classic: BGM*outputGain (SE via hijack)</text>
+
+  <text x="740" y="513" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
 </svg>
