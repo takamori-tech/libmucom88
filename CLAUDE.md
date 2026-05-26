@@ -54,6 +54,30 @@ libmucom88のヘッダーを変更する場合の手順:
 - 例外は使用しない（エラーはbool戻り値またはstd::optionalで返す）
 - `fm_common.hpp` は他プロジェクトと共有するため、変更時は後方互換性に注意
 
+## C++コーディングベストプラクティス（CLAUDIUS準拠）
+
+CLAUDIUSプロジェクトと統一したC++コーディング基準。Core Guidelines / Google / CERT準拠。
+
+### 静的解析ガードレール
+
+- `.clang-tidy`: bugprone-*, cppcoreguidelines-*, performance-* を有効化
+  - `bugprone-use-after-move` と `bugprone-narrowing-conversions` はエラー昇格
+- `.clang-format`: IndentWidth=4, K&R(Attach), ColumnLimit=120, SortIncludes=Never
+
+### 必須ルール（新規・変更コード）
+
+- **`static_cast` 使用**: 新規コードではC-style cast `(int)x` 禁止 → `static_cast<int>(x)` を使用（ES.48）
+- **`noexcept` 必須**: オーディオコールバック/render系メソッド（`advance()`, `renderMixed()`, `generateInterleaved()`）は `noexcept`（F.6）
+- **オーディオパス内禁止操作**: `advance()` / `renderMixed()` 内でのメモリ確保（`new`, `vector::push_back`）、mutex lock 禁止（Per.15, CP.43）
+- **`rand()`/`srand()` 禁止**: `std::mt19937` + `<random>` を使用（CERT MSC50-CPP）
+- **読み取り専用文字列パラメータ**: 新規APIでは `std::string_view` を推奨（LLVM Coding Standards）
+- **構造化束縛の積極使用**: `for (auto& [key, val] : map)` 形式を推奨
+
+### ハーネスエンジニアリング
+
+- `.claude/settings.json`: deny rules（.env/secrets保護）、PostToolUse Hook（C++変更時ビルド確認促進）
+- ヘッダー変更後は mucom88v 側でビルド確認を推奨
+
 ## MML再現目標
 
 - OpenMUCOM88（Z80 VM + fmgen）と機能的に完全一致を目指す

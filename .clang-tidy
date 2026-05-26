@@ -1,0 +1,32 @@
+---
+# libmucom88 .clang-tidy — ヘッダーオンリーライブラリのガードレール
+#
+# 有効チェック: bugprone, cppcoreguidelines, performance
+# ヘッダーオンリーのため HeaderFilterRegex は include/ を対象
+
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-owning-memory
+
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-narrowing-conversions
+
+HeaderFilterRegex: 'include/.*'
+
+CheckOptions:
+  - key: bugprone-narrowing-conversions.WarnOnIntegerNarrowingConversion
+    value: true

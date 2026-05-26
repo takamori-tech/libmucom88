@@ -1,0 +1,55 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Write(./secrets/**)"
+    ],
+    "allow": [
+      "Read(//Users/moriyata/git-projects/**)",
+      "Read(//Users/moriyata/Downloads/**)",
+      "Read(//dev/**)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Read(//opt/homebrew/**)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(xxd:*)",
+      "Bash(file:*)",
+      "Bash(du:*)",
+      "Bash(mkdir:*)",
+      "Bash(clang-tidy:*)",
+      "Bash(clang-format:*)",
+      "Bash(cmake:*)",
+      "Bash(python3:*)",
+      "Bash(echo:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "WebSearch",
+      "WebFetch"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\\.(cpp|hpp|h|c)\"' 2>/dev/null; then echo 'C++ヘッダー変更検出 — mucom88v側でビルド確認を推奨: cd ~/git-projects/mucom88v && cmake --build build -- -j8 2>&1 | grep error:' >&2; fi",
+            "timeout": 3000
+          }
+        ]
+      }
+    ]
+  }
+}
