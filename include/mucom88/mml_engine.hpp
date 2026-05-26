@@ -163,7 +163,7 @@ public:
     void setLoop(bool loop) { m_loop = loop; }
 
     // ── 再生開始 ────────────────────────────────────────
-    void play()
+    void play() noexcept
     {
         m_globalTick        = 0;
         m_globalSampleAccum = 0;
@@ -294,7 +294,7 @@ public:
     }
 
     // ── 停止 ────────────────────────────────────────────
-    void stop()
+    void stop() noexcept
     {
         m_playing = false;
         m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
@@ -307,14 +307,14 @@ public:
     }
 
     // ── 一時停止 ────────────────────────────────────────
-    void pause()
+    void pause() noexcept
     {
         m_playing = false;
         if (m_engine) allSoundOff();
     }
 
     // ── 再開 ────────────────────────────────────────────
-    void resume()
+    void resume() noexcept
     {
         if (m_engine) {
             // allSoundOff()がm_ssgMixerを0x3Fに上書きするため事前に退避
@@ -769,7 +769,7 @@ public:
     // baseclock = 7987200 Hz (PC-8801)
     // samplesPerTick = (256 - T) × 1152 / 7987200 × sampleRate
     //               = (256 - T) × 1152 × sampleRate / 7987200
-    void advance(uint32_t frameCount)
+    void advance(uint32_t frameCount) noexcept
     {
         if (!m_playing || !m_engine) return;
 
