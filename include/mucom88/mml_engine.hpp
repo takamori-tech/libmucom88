@@ -439,8 +439,9 @@ public:
         }
         // ボイス再生開始 + 音量設定（最後に行うので上書きされない）
         m_engine->playVoice(voiceId);
-        if (m_masterAtt > 0) {
-            int voiceVol = std::clamp(255 - m_masterAtt * 2, 0, 255);
+        int voiceTotalAtt = m_masterAtt + m_voiceAtt;
+        if (voiceTotalAtt > 0) {
+            int voiceVol = std::clamp(255 - voiceTotalAtt * 2, 0, 255);
             m_engine->writeReg(1, 0x0B, (uint8_t)voiceVol);
         }
     }
@@ -674,6 +675,16 @@ public:
     }
     float getSeVolume() const {
         return 1.0f - (float)m_seAtt / 127.0f;
+    }
+
+    // ── ボイスボリューム ──────────────────────────────────
+    // vol: 0.0（無音）〜 1.0（最大）。マスターボリュームと加算適用。
+    // play()/stop()でリセットされない（ゲーム設定として永続）。
+    void setVoiceVolume(float vol) {
+        m_voiceAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+    }
+    float getVoiceVolume() const {
+        return 1.0f - (float)m_voiceAtt / 127.0f;
     }
 
     // ── フェードアウト/イン ──────────────────────────────
@@ -1535,6 +1546,7 @@ private:
     // 3層減衰アーキテクチャ: 各成分は独立に設定され、合算値がレジスタ書き込みに使用される
     int         m_masterAtt  = 0;    // マスターボリューム減衰（0=最大、127=無音）
     int         m_seAtt      = 0;    // SE専用ボリューム減衰（0=最大、127=無音）
+    int         m_voiceAtt   = 0;    // ボイス専用減衰（0=最大、127=無音）
     float       m_outputGain = 1.0f; // 出力ゲイン（renderMixed最終段、play()/stop()でリセットしない）
     int         m_fadeAtt    = 0;    // フェードアウト減衰（0=フェードなし、127=無音）
     int         m_duckAtt    = 0;    // ダッキング減衰（0=ダッキングなし）

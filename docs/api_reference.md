@@ -233,6 +233,8 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 | `isVoicePlaying()` | ボイス再生中か |
 | `tickVoiceTimer(frameCount)` | タイマー更新（advance後に呼ぶ） |
 | `stopAdpcmB()` | ADPCM-B強制停止（BGM + ボイス両方） |
+| `setVoiceVolume(vol)` | ボイス音量設定。0.0=無音、1.0=最大。マスターボリュームと加算適用。play()/stop()でリセットされない |
+| `getVoiceVolume()` | 現在のボイスボリューム（0.0-1.0） |
 
 ボイス再生中は `m_voiceOverride` フラグによりBGMのKトラック（ch 10）の
 イベント処理が抑制される。ボイス終了時に自動で解除される。
@@ -339,6 +341,18 @@ struct SeSequenceNote {
 
 SEボリュームは `playSe()` で発音するSE専用の音量調整。マスターボリュームと独立に設定でき、
 実際のSE減衰は `masterAtt + seAtt` の合算でキャリアTLに適用される。
+フェード・ダッキングの影響は受けない。
+デフォルト値: **1.0**（最大音量）。`play()` / `stop()` でリセットされない（ゲーム設定として永続）。
+
+### ボイスボリューム
+
+| メソッド | 説明 |
+|---------|------|
+| `setVoiceVolume(vol)` | ボイスボリューム設定。0.0=無音、1.0=最大。マスターボリュームと加算適用。play()/stop()でリセットされない |
+| `getVoiceVolume()` | 現在のボイスボリューム（0.0-1.0） |
+
+ボイスボリュームは `playVoice()` で再生するゲームボイス専用の音量調整。マスターボリュームと独立に設定でき、
+実際のボイス減衰は `masterAtt + voiceAtt` の合算でADPCM-Bボリュームレジスタに適用される。
 フェード・ダッキングの影響は受けない。
 デフォルト値: **1.0**（最大音量）。`play()` / `stop()` でリセットされない（ゲーム設定として永続）。
 

@@ -220,6 +220,9 @@ MmlEngineのボイス再生APIを使うと、BGMのKトラック（ADPCM-B）と
 // ボイステーブルのロード（起動時に1回）
 fmEngine.loadVoiceTable("voice_table.bin");
 
+// ボイス音量設定（ゲーム設定から読み込み、起動時に1回）
+engine.setVoiceVolume(0.9f);  // 90%
+
 // ボイス再生（BGM再生中でも安全に呼べる）
 engine.playVoice(0);   // voiceId=0 のボイスを再生
 
@@ -580,10 +583,18 @@ engine.playSeSequence(laserPatch, laser, 3);
 - フェード（`fadeOut()`/`fadeIn()`）はBGM専用。SEには影響しない
 - ダッキング（`setDucking()`）はBGM専用。SEには影響しない
 
+### ボイス音量
+
+- マスターボリューム（`setMasterVolume()`）はボイスにも適用される
+- ボイスボリューム（`setVoiceVolume()`）はボイス専用の独立音量。マスターボリュームと加算適用
+- フェード（`fadeOut()`/`fadeIn()`）はBGM専用。ボイスには影響しない
+- ダッキング（`setDucking()`）はBGM専用。ボイスには影響しない
+
 ```cpp
 // ゲームオプション画面での音量設定例
-engine.setMasterVolume(0.8f);  // BGM+SE共通マスター 80%
+engine.setMasterVolume(0.8f);  // BGM+SE+ボイス共通マスター 80%
 engine.setSeVolume(0.6f);      // SE音量 60%（BGMより控えめ）
+engine.setVoiceVolume(0.9f);   // ボイス音量 90%
 ```
 
 ## チャンネル状態の取得（UI表示用）
