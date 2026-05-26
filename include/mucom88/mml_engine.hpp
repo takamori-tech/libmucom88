@@ -176,7 +176,7 @@ public:
         m_fading   = false;
         m_fadeAction   = FadeAction::None;
         m_fadeOutDone  = false;
-        m_globalAtt = m_masterAtt;
+        m_globalAtt = m_masterAtt + m_bgmAtt;
         stopAllSe();
         m_seAllocCounter = 0;
         // ADPCM-B エンジンレベル状態リセット
@@ -298,7 +298,7 @@ public:
         m_fadeAtt = 0;
         m_duckAtt = 0;
         m_fading  = false;
-        m_globalAtt = m_masterAtt;
+        m_globalAtt = m_masterAtt + m_bgmAtt;
         stopAllSe();
         if (m_engine) allSoundOff();
     }
@@ -664,6 +664,17 @@ public:
     }
     float getMasterVolume() const {
         return 1.0f - (float)m_masterAtt / 127.0f;
+    }
+
+    // ── BGMボリューム ──────────────────────────────────
+    // vol: 0.0（無音）〜 1.0（最大）。マスターボリュームと加算適用。
+    // SE・ボイスには影響しない。play()/stop()でリセットされない。
+    void setBgmVolume(float vol) {
+        m_bgmAtt = (int)((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
+        recalcGlobalAtt();
+    }
+    float getBgmVolume() const {
+        return 1.0f - (float)m_bgmAtt / 127.0f;
     }
 
     // ── SEボリューム ───────────────────────────────────
@@ -1545,6 +1556,7 @@ private:
     int         m_globalAtt  = 0;     // 合算減衰値（FM TL加算値、0=通常）= masterAtt + fadeAtt + duckAtt
     // 3層減衰アーキテクチャ: 各成分は独立に設定され、合算値がレジスタ書き込みに使用される
     int         m_masterAtt  = 0;    // マスターボリューム減衰（0=最大、127=無音）
+    int         m_bgmAtt     = 0;    // BGM専用減衰（0=最大、127=無音）
     int         m_seAtt      = 0;    // SE専用ボリューム減衰（0=最大、127=無音）
     int         m_voiceAtt   = 0;    // ボイス専用減衰（0=最大、127=無音）
     float       m_outputGain = 1.0f; // 出力ゲイン（renderMixed最終段、play()/stop()でリセットしない）
@@ -2137,7 +2149,7 @@ private:
     // 3成分の合算減衰値を再計算し、全チャンネルのレジスタに即時反映
     void recalcGlobalAtt()
     {
-        m_globalAtt = std::clamp(m_masterAtt + m_fadeAtt + m_duckAtt, 0, 127);
+        m_globalAtt = std::clamp(m_masterAtt + m_bgmAtt + m_fadeAtt + m_duckAtt, 0, 127);
         if (!m_engine) return;
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
             int ch = fmMmlCh(fi);

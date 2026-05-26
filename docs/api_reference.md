@@ -332,6 +332,17 @@ struct SeSequenceNote {
 マスターボリュームはBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）に加え、`playVoice()` のボイス再生、および`playSe()` のSE再生にも適用される。
 デフォルト値: **1.0**（最大音量）。`play()` / `stop()` でリセットされない（ゲーム設定として永続）。
 
+### BGMボリューム
+
+| メソッド | 説明 |
+|---------|------|
+| `setBgmVolume(vol)` | BGMボリューム設定。0.0=無音、1.0=最大。マスターボリュームと加算適用。play()/stop()でリセットされない |
+| `getBgmVolume()` | 現在のBGMボリューム（0.0-1.0） |
+
+BGMボリュームはBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）専用の音量調整。SE・ボイスには影響しない。
+実際のBGM減衰は `masterAtt + bgmAtt + fadeAtt + duckAtt` の合算で各チャンネルに適用される。
+デフォルト値: **1.0**（最大音量）。`play()` / `stop()` でリセットされない（ゲーム設定として永続）。
+
 ### SEボリューム
 
 | メソッド | 説明 |
@@ -396,9 +407,9 @@ enum class FadeAction {
 | `setOutputGain(gain)` | 出力ゲイン設定。`renderMixed()` の最終段でPCMにゲインを掛けてクリッピング。デフォルト1.0。play()/stop()でリセットされない |
 | `getOutputGain()` | 現在の出力ゲイン値 |
 | `setGlobalAttenuation(att)` | ダッキング減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A/B: スケーリング。マスターボリューム・フェードと独立に加算される |
-| `globalAttenuation()` | 合算減衰値（masterAtt + fadeAtt + duckAtt） |
+| `globalAttenuation()` | 合算減衰値（masterAtt + bgmAtt + fadeAtt + duckAtt） |
 
-**3層減衰アーキテクチャ:** マスターボリューム、フェード、ダッキングの3成分がFM TL単位（0=最大、127=無音）で独立に管理され、合算値 `globalAtt = clamp(masterAtt + fadeAtt + duckAtt, 0, 127)` が各チャンネルに適用される。
+**4層減衰アーキテクチャ:** マスターボリューム、BGMボリューム、フェード、ダッキングの4成分がFM TL単位（0=最大、127=無音）で独立に管理され、合算値 `globalAtt = clamp(masterAtt + bgmAtt + fadeAtt + duckAtt, 0, 127)` が各BGMチャンネルに適用される。SE・ボイスには `masterAtt + seAtt` / `masterAtt + voiceAtt` がそれぞれ独立に適用される。
 
 チャンネル種別ごとのスケーリング:
 - **FM**: キャリアTLに +globalAtt（TLは0=最大、127=無音）

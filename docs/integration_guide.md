@@ -295,6 +295,16 @@ engine.playVoice(0);  // ボイスも80%の音量で再生
 マスターボリュームは `play()` / `stop()` でリセットされない（ゲーム設定として永続）。
 ダッキングやフェードとは独立に動作し、全て加算的に適用される。
 
+### BGMボリューム
+
+BGMのみを独立して調整する場合（SE・ボイスには影響しない）:
+
+```cpp
+engine.setBgmVolume(0.7f);  // BGM 70%（SE・ボイスは影響なし）
+```
+
+BGMボリュームは `masterAtt + bgmAtt + fadeAtt + duckAtt` として合算され、BGM全チャンネルに適用される。
+
 ### フェードアウト/イン
 
 ステージ終了時のBGMフェードアウト（手動停止）:
@@ -592,9 +602,10 @@ engine.playSeSequence(laserPatch, laser, 3);
 
 ```cpp
 // ゲームオプション画面での音量設定例
-engine.setMasterVolume(0.8f);  // BGM+SE+ボイス共通マスター 80%
-engine.setSeVolume(0.6f);      // SE音量 60%（BGMより控えめ）
-engine.setVoiceVolume(0.9f);   // ボイス音量 90%
+engine.setMasterVolume(1.0f);  // マスター: 最大
+engine.setBgmVolume(0.7f);     // BGM: 70%
+engine.setSeVolume(0.9f);      // SE: 90%
+engine.setVoiceVolume(0.9f);   // ボイス: 90%
 ```
 
 ## チャンネル状態の取得（UI表示用）
