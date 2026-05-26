@@ -2984,7 +2984,10 @@ private:
             }
         }
         // 全体音量TL（MUCOM88互換: vコマンドの全体音量値を毎回書き込み）
-        m_engine->writeReg(0, 0x11, (uint8_t)(m_rhythmTL & 0x3F));
+        // m_globalAtt を反映（マスターボリューム・BGMボリューム・フェード・ダッキング対応）
+        int rhythmAtt = m_globalAtt * 63 / 127;
+        int adjustedTL = std::clamp((int)m_rhythmTL - rhythmAtt, 0, 63);
+        m_engine->writeReg(0, 0x11, (uint8_t)(adjustedTL & 0x3F));
         // キーオン（bit7=0）
         m_engine->writeReg(0, 0x10, m_rhythmMask & 0x3F);
     }
