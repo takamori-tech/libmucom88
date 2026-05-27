@@ -26,30 +26,30 @@ public:
     virtual void writeReg(int port, uint8_t addr, uint8_t data) noexcept = 0;
 
     // ステレオPCM生成（インターリーブ L,R,L,R...）
-    virtual void generateInterleaved(int16_t* buf, uint32_t frameCount) = 0;
+    virtual void generateInterleaved(int16_t* buf, uint32_t frameCount) noexcept = 0;
 
     // リセット
     virtual void reset() noexcept = 0;
 
     // ADPCM-A ROM ロード（リズム音源用）
-    virtual bool loadAdpcmRom(const std::string& path) = 0;
-    virtual bool loadAdpcmRomFromMemory(const uint8_t* data, size_t size) = 0;
-    virtual bool hasAdpcmRom() const noexcept = 0;
+    [[nodiscard]] virtual bool loadAdpcmRom(const std::string& path) = 0;
+    [[nodiscard]] virtual bool loadAdpcmRomFromMemory(const uint8_t* data, size_t size) = 0;
+    [[nodiscard]] virtual bool hasAdpcmRom() const noexcept = 0;
 
     // ADPCM-B ボイステーブル
-    virtual bool loadVoiceTable(const std::string& path) = 0;
-    virtual bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) = 0;
-    virtual bool hasVoiceTable() const noexcept = 0;
+    [[nodiscard]] virtual bool loadVoiceTable(const std::string& path) = 0;
+    [[nodiscard]] virtual bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) = 0;
+    [[nodiscard]] virtual bool hasVoiceTable() const noexcept = 0;
     // level: ADPCM-Bボリューム（0=無音、255=最大）。再生開始時に一発で書き込む
     virtual void playVoice(int voiceId, int level = 255) noexcept = 0;
     virtual void stopVoice() noexcept = 0;
-    virtual bool isVoicePlaying() const noexcept = 0;
+    [[nodiscard]] virtual bool isVoicePlaying() const noexcept = 0;
     virtual void tickVoiceTimer(uint32_t frameCount) noexcept = 0;
     // BGM + ボイス両方のADPCM-Bを強制停止
     virtual void stopAdpcmB() noexcept = 0;
 
     // ADPCM-B PCMデータロード（mucompcm.binのデータ部分）
-    virtual bool loadPcmDataToAdpcmB(const uint8_t* /*data*/, size_t /*size*/) { return false; }
+    [[nodiscard]] virtual bool loadPcmDataToAdpcmB(const uint8_t* /*data*/, size_t /*size*/) { return false; }
 
     // FM/SSG音量バランス（ミックスレベル調整）
     // ssgScale: SSG出力のリニアスケール（1.0=等倍、0.71≈-3dB、デフォルト）

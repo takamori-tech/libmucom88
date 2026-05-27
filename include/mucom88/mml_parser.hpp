@@ -67,6 +67,7 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include <fstream>
 #include "fm_common.hpp"
 
 // =============================================================================
@@ -187,7 +188,7 @@ public:
     // MUCOM88 形式: 256音色 × 32バイト = 8192バイト
     // MUCファイル内に定義がない音色番号を補完する。
     // ==========================================================================
-    bool loadVoiceDat(const std::string& path)
+    [[nodiscard]] bool loadVoiceDat(const std::string& path)
     {
         std::ifstream ifs(path, std::ios::binary | std::ios::ate);
         if (!ifs) return false;
@@ -199,18 +200,18 @@ public:
         return true;
     }
 
-    bool loadVoiceDatFromMemory(const uint8_t* data, size_t size)
+    [[nodiscard]] bool loadVoiceDatFromMemory(const uint8_t* data, size_t size)
     {
         if (!data || size < 32) return false;
         m_voiceDat.assign(data, data + size);
         return true;
     }
-    bool hasVoiceDat() const { return m_voiceDat.size() >= 32; }
+    [[nodiscard]] bool hasVoiceDat() const { return m_voiceDat.size() >= 32; }
 
     // ==========================================================================
     // parse: .muc形式のMML文字列全体をパース
     // ==========================================================================
-    MucFile parse(const std::string& muc)
+    [[nodiscard]] MucFile parse(const std::string& muc)
     {
         MucFile result;
 
@@ -380,7 +381,7 @@ private:
     // voice.dat から音色名で検索（@"name" コマンド用）
     // MUCOM88 Z80コンパイラのSRCHPCM相当: name[6]フィールドをバイト列比較
     // 戻り値: 見つかった場合は音色番号(0-255)、見つからない場合は-1
-    int findPatchByName(const std::string& name) const
+    [[nodiscard]] int findPatchByName(const std::string& name) const
     {
         if (m_voiceDat.size() < 32) return -1;
         int maxPatch = static_cast<int>(m_voiceDat.size() / 32);

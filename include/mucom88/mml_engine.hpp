@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cmath>
 #include <unordered_map>
+#include <fstream>
 #include "mml_parser.hpp"
 #include "fm_engine_interface.hpp"
 
@@ -84,6 +85,10 @@ public:
     };
 
     MmlEngine() : m_engine(nullptr), m_sampleRate(44100), m_chipClock(7987200), m_playing(false) {}
+
+    // IFmEngineポインタ・atomicメンバを保持するためコピー禁止（C.21）
+    MmlEngine(const MmlEngine&) = delete;
+    MmlEngine& operator=(const MmlEngine&) = delete;
 
     // ── チャンネル種別判定 ────────────────────────────────
     static bool isFM(int ch)     { return ch <= 2 || (ch >= 7 && ch <= 9); }
@@ -351,28 +356,28 @@ public:
         m_playing = true;
     }
 
-    bool isPlaying() const { return m_playing; }
-    uint32_t globalTick() const { return m_globalTick; }
-    int globalTempo() const { return m_globalTempo; }
-    uint32_t commonEndTick() const { return m_commonEndTick; }
-    uint32_t loopTickOffset() const { return m_loopTickOffset; }
-    int loopCount() const {
+    [[nodiscard]] bool isPlaying() const { return m_playing; }
+    [[nodiscard]] uint32_t globalTick() const { return m_globalTick; }
+    [[nodiscard]] int globalTempo() const { return m_globalTempo; }
+    [[nodiscard]] uint32_t commonEndTick() const { return m_commonEndTick; }
+    [[nodiscard]] uint32_t loopTickOffset() const { return m_loopTickOffset; }
+    [[nodiscard]] int loopCount() const {
         if (m_commonEndTick == 0 || m_commonEndTick <= m_commonLoopTick) return 0;
         uint32_t loopLen = m_commonEndTick - m_commonLoopTick;
         return static_cast<int>(m_loopTickOffset / loopLen);
     }
 
     // チャンネル状態取得（UI表示用）
-    bool chNoteOn(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOn : false; }
-    int  chNote(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].currentNote : 0; }
-    int  chVolume(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].volume : 0; }
-    int  chPan(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].pan : 3; }
-    int  chReverb(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].reverbValue : 0; }
+    [[nodiscard]] bool chNoteOn(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOn : false; }
+    [[nodiscard]] int  chNote(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].currentNote : 0; }
+    [[nodiscard]] int  chVolume(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].volume : 0; }
+    [[nodiscard]] int  chPan(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].pan : 3; }
+    [[nodiscard]] int  chReverb(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].reverbValue : 0; }
     // noteOnトリガーカウンター（UI activity検出用、advance()毎にインクリメント）
     // chNoteOn()はワンショット楽器で一瞬falseになるため、カウンターで検出する
-    uint32_t chNoteOnCount(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOnCount : 0; }
+    [[nodiscard]] uint32_t chNoteOnCount(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOnCount : 0; }
     // FM パッチ番号取得（fi=FMインデックス 0-5）
-    int  fmPatchNo(int fi) const { return (fi >= 0 && fi < MAX_FM_CHANNELS) ? m_fmPatchNo[fi] : -1; }
+    [[nodiscard]] int  fmPatchNo(int fi) const { return (fi >= 0 && fi < MAX_FM_CHANNELS) ? m_fmPatchNo[fi] : -1; }
 
     // ── チャンネルハイジャック（効果音割り込み用）──────────
     // BGM再生中のチャンネルをSE再生に一時的に奪う。
@@ -421,13 +426,13 @@ public:
     // ── ADPCM-B ボイス再生（IFmEngine パススルー + Kトラック優先制御）──
     // ゲームボイス再生中はBGMのKトラック(ch10)イベント処理を抑制し、
     // ADPCM-Bをボイス再生に専有させる。
-    bool hasVoiceTable() const {
+    [[nodiscard]] bool hasVoiceTable() const {
         return m_engine ? m_engine->hasVoiceTable() : false;
     }
-    bool loadVoiceTable(const std::string& path) {
+    [[nodiscard]] bool loadVoiceTable(const std::string& path) {
         return m_engine ? m_engine->loadVoiceTable(path) : false;
     }
-    bool loadVoiceTableFromMemory(const uint8_t* data, size_t size) {
+    [[nodiscard]] bool loadVoiceTableFromMemory(const uint8_t* data, size_t size) {
         return m_engine ? m_engine->loadVoiceTableFromMemory(data, size) : false;
     }
     void playVoice(int voiceId) {
@@ -461,10 +466,10 @@ public:
             setGlobalAttenuation(0);
         }
     }
-    bool isVoicePlaying() const {
+    [[nodiscard]] bool isVoicePlaying() const {
         return m_engine ? m_engine->isVoicePlaying() : false;
     }
-    void tickVoiceTimer(uint32_t frameCount) {
+    void tickVoiceTimer(uint32_t frameCount) noexcept {
         if (!m_engine) return;
         m_engine->tickVoiceTimer(frameCount);
         // ボイス終了検出 → ダッキングリリースまたは即時復帰
@@ -538,7 +543,7 @@ public:
             m_seEngine = nullptr;
         }
     }
-    SeMode seMode() const { return m_seMode; }
+    [[nodiscard]] SeMode seMode() const { return m_seMode; }
 
     // ── SEシーケンスノート（マルチノート + ピッチスイープ）─
     struct SeSequenceNote {
@@ -553,7 +558,7 @@ public:
     // patch: FM音色, noteNum: MIDIノート番号, velocity: 音量(0-15)
     // durationMs: 自動停止時間(ミリ秒)。0=手動停止のみ
     // 戻り値: SEスロット番号(0-5)。割り当て失敗時は -1
-    int playSe(const FmPatch& patch, int noteNum, int velocity = 15, int durationMs = 0)
+    [[nodiscard]] int playSe(const FmPatch& patch, int noteNum, int velocity = 15, int durationMs = 0)
     {
         if (m_seMode == SeMode::Rich)
             return playSeRich(patch, noteNum, velocity, durationMs);
@@ -565,7 +570,7 @@ public:
     // patch: FM音色, notes: ノート配列, noteCount: ノート数(1-8)
     // velocity: 音量(0-15)
     // 戻り値: SEスロット番号(0-5), -1=失敗
-    int playSeSequence(const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15)
+    [[nodiscard]] int playSeSequence(const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15)
     {
         if (!notes || noteCount <= 0) return -1;
         noteCount = std::clamp(noteCount, 1, static_cast<int>(SeSlot::MAX_SEQ_NOTES));
@@ -652,12 +657,12 @@ public:
         slot.noteNum = noteNum;
     }
 
-    bool isSeActive(int seSlot) const
+    [[nodiscard]] bool isSeActive(int seSlot) const
     {
         return (seSlot >= 0 && seSlot < MAX_SE_SLOTS) ? m_seSlots[seSlot].active : false;
     }
 
-    int activeSeCount() const
+    [[nodiscard]] int activeSeCount() const
     {
         int n = 0;
         for (const auto& slot : m_seSlots)
@@ -684,7 +689,7 @@ public:
         if (m_engine) m_engine->setSsgMixScale(ssgScale);
         if (m_seEngine) m_seEngine->setSsgMixScale(ssgScale);
     }
-    float getSsgMixScale() const {
+    [[nodiscard]] float getSsgMixScale() const {
         return m_engine ? m_engine->getSsgMixScale() : 1.0f;
     }
 
@@ -693,7 +698,7 @@ public:
     // fmgenの出力レベル補正（例: 2.0倍）等に使用。
     // play()/stop()でリセットされない（ゲームのオーディオ設定として永続）。
     void setOutputGain(float gain) { m_outputGain = gain; }
-    float getOutputGain() const { return m_outputGain; }
+    [[nodiscard]] float getOutputGain() const { return m_outputGain; }
 
     // ── マスターボリューム ─────────────────────────────
     // vol: 0.0（無音）〜 1.0（最大）。FM TL減衰値に内部変換。
@@ -703,7 +708,7 @@ public:
         recalcGlobalAtt();
         seRecalcVolume();
     }
-    float getMasterVolume() const {
+    [[nodiscard]] float getMasterVolume() const {
         return 1.0f - static_cast<float>(m_masterAtt) / 127.0f;
     }
 
@@ -714,7 +719,7 @@ public:
         m_bgmAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
         recalcGlobalAtt();
     }
-    float getBgmVolume() const {
+    [[nodiscard]] float getBgmVolume() const {
         return 1.0f - static_cast<float>(m_bgmAtt) / 127.0f;
     }
 
@@ -725,7 +730,7 @@ public:
         m_seAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
         seRecalcVolume();
     }
-    float getSeVolume() const {
+    [[nodiscard]] float getSeVolume() const {
         return 1.0f - static_cast<float>(m_seAtt) / 127.0f;
     }
 
@@ -735,7 +740,7 @@ public:
     void setVoiceVolume(float vol) {
         m_voiceAtt = static_cast<int>((1.0f - std::clamp(vol, 0.0f, 1.0f)) * 127.0f);
     }
-    float getVoiceVolume() const {
+    [[nodiscard]] float getVoiceVolume() const {
         return 1.0f - static_cast<float>(m_voiceAtt) / 127.0f;
     }
 
@@ -782,10 +787,10 @@ public:
         m_fading = false;
         recalcGlobalAtt();
     }
-    bool isFading() const { return m_fading; }
+    [[nodiscard]] bool isFading() const { return m_fading; }
     // フェードアウト完了後にFadeActionが実行されたかを返す。
     // play()でリセット。stop()ではリセットしない（呼び出し側がポーリングで検出するため）。
-    bool isFadeOutDone() const { return m_fadeOutDone; }
+    [[nodiscard]] bool isFadeOutDone() const { return m_fadeOutDone; }
 
     // ── グローバル減衰（ダッキング用・後方互換）─────────────
     // att: FM TL加算値（0=通常、20≈-15dB）。ダッキング成分を設定。
@@ -795,7 +800,7 @@ public:
         m_duckAtt = att;
         recalcGlobalAtt();
     }
-    int globalAttenuation() const { return m_globalAtt; }
+    [[nodiscard]] int globalAttenuation() const { return m_globalAtt; }
 
     // ── 時間を進める（MUCOM88互換: 全チャンネル同期クロック）─
     //
@@ -1058,7 +1063,7 @@ public:
     // advance() + tickVoiceTimer() + SE duration追跡 + 両チップPCM生成 + ミキシング。
     // 16サンプル単位で処理（OpenMUCOM88互換タイミング）。
     // ClassicモードでもRichモードでも使用可能。
-    void renderMixed(int16_t* out, uint32_t frameCount)
+    void renderMixed(int16_t* out, uint32_t frameCount) noexcept
     {
         uint32_t remaining = frameCount;
         uint32_t offset = 0;
@@ -2684,7 +2689,7 @@ public:
     // format: [0x000-0x3FF] info table (32 bytes × 最大16エントリ)
     //         [0x400+]      raw ADPCM-B data
     // info entry: [0-15]=name, [26-27]=param, [28-29]=startAddr, [30-31]=length
-    bool loadPcmData(const uint8_t* data, size_t size)
+    [[nodiscard]] bool loadPcmData(const uint8_t* data, size_t size)
     {
         if (!data || size < 0x400 || !m_engine) return false;
         size_t infoSize = 0x400;
@@ -2715,7 +2720,7 @@ public:
         return true;
     }
 
-    bool loadPcmFile(const std::string& path)
+    [[nodiscard]] bool loadPcmFile(const std::string& path)
     {
         std::ifstream ifs(path, std::ios::binary | std::ios::ate);
         if (!ifs) return false;
@@ -2729,7 +2734,7 @@ public:
     // ── mucompcm.bin 統合ロード ──────────────────────────
     // PCMアドレステーブル（自身で使用）とADPCM-Bオーディオデータ（IFmEngine経由）
     // をまとめてロード。利用側がヘッダー分割を意識する必要がない。
-    bool loadPcmBinary(const uint8_t* data, size_t size)
+    [[nodiscard]] bool loadPcmBinary(const uint8_t* data, size_t size)
     {
         static constexpr size_t HEADER_SIZE = 0x400;
         if (!data || size <= HEADER_SIZE) return false;
@@ -2739,7 +2744,7 @@ public:
         return true;
     }
 
-    bool loadPcmBinaryFile(const std::string& path)
+    [[nodiscard]] bool loadPcmBinaryFile(const std::string& path)
     {
         std::ifstream ifs(path, std::ios::binary | std::ios::ate);
         if (!ifs) return false;
@@ -2944,7 +2949,7 @@ private:
     }
 
     // SE duration自動停止処理（シーケンス再生・ピッチスイープ対応）
-    void seTickDuration(uint32_t frameCount)
+    void seTickDuration(uint32_t frameCount) noexcept
     {
         for (int i = 0; i < MAX_SE_SLOTS; i++) {
             auto& slot = m_seSlots[i];

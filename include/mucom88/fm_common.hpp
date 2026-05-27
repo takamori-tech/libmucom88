@@ -71,7 +71,7 @@ using Mucom88Patch = FmPatch;
 //   key = noteNum % 12 (0=C, 1=C#, ..., 11=B)
 //   block = noteNum / 12 - 1 (MIDI octave 0 = block -1, MIDI octave 1 = block 0)
 // =============================================================================
-inline uint16_t noteToFnum(int noteNum, int& blockOut)
+[[nodiscard]] inline uint16_t noteToFnum(int noteNum, int& blockOut)
 {
     // MUCOM88 FNUMB テーブル: C, C#, D, D#, E, F, F#, G, G#, A, A#, B
     static const uint16_t fnumb[12] = {
@@ -99,7 +99,7 @@ inline uint16_t noteToFnum(int noteNum, int& blockOut)
 // chipClock: YM2608マスタークロック（7987200=NTSC標準）
 // Issue #22: クロック定数をハードコードせず引数で受け取る
 // =============================================================================
-inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
+[[nodiscard]] inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
 {
     double freq = 440.0 * std::pow(2.0, (noteNum - 69) / 12.0);
     double divisor = chipClock / 64.0;
@@ -121,7 +121,7 @@ inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
 //   byte 25:    FB(bit5-3) / AL(bit2-0)
 //   bytes 26-31: 音色名(6文字)
 // =============================================================================
-inline FmPatch parseVoiceDatEntry(const uint8_t* voiceDat, size_t dataSize, int patchNo)
+[[nodiscard]] inline FmPatch parseVoiceDatEntry(const uint8_t* voiceDat, size_t dataSize, int patchNo)
 {
     FmPatch p;
     // 負のpatchNoはsize_tへのキャストで巨大値にラップし境界チェックをすり抜けるため早期リターン
@@ -220,7 +220,7 @@ inline void writeVoiceDatEntry(uint8_t* rec, const FmPatch& p)
 // STV1(通常音量): index = TOTALV(=4) + vol → kFmVdat[index]
 // FS2(リバーブ):  index = (vol+4+R) >> 1  → kFmVdat[index]
 // =============================================================================
-static constexpr int kFmVdat[20] = {
+inline constexpr int kFmVdat[20] = {
     0x36, 0x33, 0x30, 0x2D,  // [0-3]（STV1では通常使わない、FS2で使用）
     0x2A, 0x28, 0x25, 0x22,  // [4-7]  = vol 0-3
     0x20, 0x1D, 0x1A, 0x18,  // [8-11] = vol 4-7
@@ -229,13 +229,13 @@ static constexpr int kFmVdat[20] = {
 };
 
 // MUCOM88 STV1互換: FMVDAT[TOTALV + vol]（通常の音量設定）
-inline int fmvdatLookup(int vol15)
+[[nodiscard]] inline int fmvdatLookup(int vol15)
 {
     return kFmVdat[std::clamp(vol15 + 4, 0, 19)];
 }
 
 // MUCOM88 FS2→STV2互換: FMVDAT[(vol+4+R) >> 1]（リバーブ用）
-inline int fmReverbTL(int vol15, int R)
+[[nodiscard]] inline int fmReverbTL(int vol15, int R)
 {
     return kFmVdat[std::clamp((vol15 + 4 + R) >> 1, 0, 19)];
 }
@@ -250,7 +250,7 @@ struct SsgPresetParams {
     int lfoDelay, lfoRate, lfoDepth, lfoCount;
 };
 
-static constexpr SsgPresetParams kSsgPresets[16] = {
+inline constexpr SsgPresetParams kSsgPresets[16] = {
     {{255,255,255,255,  0,255}, 1, false, 0,0,0,0},       // @0: 持続
     {{255,255,255,200,  0, 10}, 1, false, 0,0,0,0},       // @1: 標準サステイン
     {{255,255,255,200,  1, 10}, 1, false, 0,0,0,0},       // @2: サステインレート1
@@ -273,12 +273,12 @@ static constexpr SsgPresetParams kSsgPresets[16] = {
 // YM2608 オペレータースロットオフセット
 // op1=+0, op2=+8, op3=+4, op4=+12
 // =============================================================================
-static constexpr int kFmSlotOffset[4] = { 0, 8, 4, 12 };
+inline constexpr int kFmSlotOffset[4] = { 0, 8, 4, 12 };
 
 // =============================================================================
 // アルゴリズムごとのキャリアオペレータ判定
 // =============================================================================
-static constexpr bool kFmCarrier[8][4] = {
+inline constexpr bool kFmCarrier[8][4] = {
     {false, false, false, true },  // AL0: op4
     {false, false, false, true },  // AL1: op4
     {false, false, false, true },  // AL2: op4
