@@ -66,7 +66,6 @@
 #include <cctype>
 #include <algorithm>
 #include <cstring>
-#include <sstream>
 #include <fstream>
 #include "fm_common.hpp"
 
@@ -244,10 +243,14 @@ public:
 
         result.patches = m_patches;
 
-        // 行ごとに処理
-        std::istringstream stream(muc);
-        std::string line;
-        while (std::getline(stream, line)) {
+        // 行ごとに処理（ゼロコピー行スキャン: istringstream の入力コピーを回避）
+        size_t lineStart = 0;
+        while (lineStart < muc.size()) {
+            size_t lineEnd = muc.find('\n', lineStart);
+            if (lineEnd == std::string::npos) lineEnd = muc.size();
+            std::string line(muc, lineStart, lineEnd - lineStart);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            lineStart = lineEnd + 1;
             // ヘッダタグ・マクロ定義行はスキップ（収集済み）
             if (line.size() > 0 && line[0] == '#') {
                 parseHeader(line, result);
@@ -436,9 +439,14 @@ private:
     // ==========================================================================
     void collectMacros(const std::string& muc)
     {
-        std::istringstream stream(muc);
-        std::string line;
-        while (std::getline(stream, line)) {
+        // ゼロコピー行スキャン: istringstream の入力コピーを回避
+        size_t lineStart = 0;
+        while (lineStart < muc.size()) {
+            size_t lineEnd = muc.find('\n', lineStart);
+            if (lineEnd == std::string::npos) lineEnd = muc.size();
+            std::string line(muc, lineStart, lineEnd - lineStart);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            lineStart = lineEnd + 1;
             size_t pos = 0;
             while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) pos++;
             if (pos >= line.size()) continue;
@@ -624,152 +632,21 @@ private:
             }
 
             // エコーマクロ（\コマンド、MUCOM88 SETBEF互換）
-            // Z80コンパイラのBFDAT/VDDATはグローバル変数 → m_echoBufIdx/m_echoVolRed
-            // \=N,M: エコーパラメータ設定（N=トーンバッファインデックス1-9, M=音量減衰0-15）
-            // \: 直前のノートを音量-Mで再発音（Z80では常に実行、"echo off"状態は存在しない）
             if (mml[pos] == '\\') {
-                pos++;
-                if (pos < mml.size() && mml[pos] == '=') {
-                    // \=N,M: パラメータ設定（グローバル、全チャンネル共有）
-                    pos++;
-                    int n = 1;
-                    if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
-                        n = readInt(mml, pos, 1);
-                    if (n < 1) n = 1;
-                    if (n > 9) n = 9;
-                    m_echoBufIdx = n - 1;  // Z80 BFDAT = N-1（BEFTONEバッファインデックス）
-                    if (pos < mml.size() && mml[pos] == ',') {
-                        pos++;
-                        if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
-                            m_echoVolRed = readInt(mml, pos, 0);
-                    }
-                } else if (st.lastFullTicks > 0) {
-                    // \: 直前のノートをエコー再生（Z80 STBF3互換）
-                    // Z80はBEFCO（直前ノートのフル音長、staccato適用前）を使用する。
-                    // events[i].durationはstaccato適用後のkeyOnTicksなので、
-                    // st.lastFullTicks（= Z80のBEFCO相当）でtickを進める。
-                    // Z80 STBF3にはechoCount>0チェックがない — \は常にエコーを生成する
-                    uint32_t echoDur = st.lastFullTicks;  // Z80 BEFCO互換
-                    for (int i = static_cast<int>(events.size()) - 1; i >= 0; i--) {
-                        if (events[i].type == MmlEventType::NOTE_ON && events[i].channel == ch) {
-                            // 音量下げイベント
-                            MmlEvent volDown{};
-                            volDown.type = MmlEventType::VOLUME;
-                            volDown.tick = st.tick;
-                            // Z80 STBF3: 0xFB(-M) → VOLUPF → ADD A,(IX+6) — クランプなし
-                            // FM: IX+6は+4オフセット含みのため負値許容（Issue #57と同じ）
-                            // SSG: VOLUPS → RET NC で範囲外なら変更しない → 0クランプ
-                            if (isFMChannel(ch)) {
-                                volDown.value = st.volume - m_echoVolRed;  // FM: クランプなし
-                            } else {
-                                volDown.value = std::max(st.volume - m_echoVolRed, 0);
-                            }
-                            volDown.channel = ch;
-                            volDown.note = 3;  // エコー音量マーカー（ブラケットループvolDelta補正対象、vコマンド検出除外）
-                            events.push_back(volDown);
-
-                            // ノート複製（同じ音高、フル音長で発音）
-                            MmlEvent echoOn = events[i];
-                            echoOn.tick = st.tick;
-                            echoOn.duration = echoDur;
-                            events.push_back(echoOn);
-
-                            // NOTE_OFF
-                            MmlEvent echoOff{};
-                            echoOff.type = MmlEventType::NOTE_OFF;
-                            echoOff.tick = st.tick + echoDur;
-                            echoOff.note = events[i].note;
-                            echoOff.channel = ch;
-                            events.push_back(echoOff);
-
-                            st.tick += echoDur;
-
-                            // 音量復帰
-                            MmlEvent volUp{};
-                            volUp.type = MmlEventType::VOLUME;
-                            volUp.tick = st.tick;
-                            volUp.value = st.volume;
-                            volUp.channel = ch;
-                            volUp.note = 3;  // エコー音量マーカー
-                            events.push_back(volUp);
-                            break;
-                        }
-                    }
-                }
+                parseEchoCommand(mml, pos, ch, st, events);
                 continue;
             }
 
             // 大文字 T = テンポ（BPM指定）→ Timer-B値に変換
-            // 小文字 t = Timer-B直接値（switch文内で処理）
             if (mml[pos] == 'T' && pos + 1 < mml.size()
                 && std::isdigit(static_cast<unsigned char>(mml[pos + 1]))) {
-                pos++;
-                int bpm = readInt(mml, pos, 120);
-                // BPM → Timer-B値変換
-                // Timer-B period = (256-T) * 16 / fmclock
-                // fmclock = 7987200/2/6/12 = 55466
-                // tick per minute = fmclock / 16 / (256-T)
-                // BPM = tick_per_min / PPQ_quarter
-                // ここで PPQ_quarter = wholeTick/4 (C128の場合32)
-                // T = 256 - fmclock / (16 * BPM * PPQ_quarter / 60)
-                // T = 256 - 60 * fmclock / (16 * BPM * PPQ_quarter)
-                static constexpr int FMCLOCK_INT = 7987200 / 2 / 6 / 12;  // 55466
-                int ppqQ = st.wholeTick / 4;  // 4分音符あたりのクロック数
-                if (ppqQ <= 0) ppqQ = 32;
-                if (bpm <= 0) bpm = 120;
-                int tb = 256 - static_cast<int>(60.0 * FMCLOCK_INT / (16.0 * bpm * ppqQ));
-                tb = std::clamp(tb, 0, 255);
-                st.tempo = tb;
-                MmlEvent ev{};
-                ev.type = MmlEventType::TEMPO;
-                ev.tick = st.tick; ev.value = tb; ev.channel = ch;
-                events.push_back(ev);
+                parseTempoBpm(mml, pos, ch, st, events);
                 continue;
             }
 
             // 大文字 R = リバーブ（MUCOM88 REVERVE/REVSW/REVMOD）
-            // 小文字 r（休符）と区別するため tolower の前で処理
             if (mml[pos] == 'R') {
-                if (pos + 1 < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos+1]))) {
-                    pos++; // skip 'R'
-                    // サブコマンド文字列を取得
-                    std::string sub;
-                    while (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
-                        sub += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
-                        pos++;
-                    }
-                    int param = 0;
-                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                        param = readInt(mml, pos, 0);
-
-                    if (sub == "F") {
-                        // RF0/RF1: リバーブスイッチ
-                        MmlEvent ev{};
-                        ev.type = MmlEventType::REVERB_SWITCH;
-                        ev.tick = st.tick; ev.value = param; ev.channel = ch;
-                        events.push_back(ev);
-                        st.reverbEnabled = (param != 0);
-                    } else if (sub == "M") {
-                        // Rm0/Rm1: リバーブモード
-                        MmlEvent ev{};
-                        ev.type = MmlEventType::REVERB_MODE;
-                        ev.tick = st.tick; ev.value = param; ev.channel = ch;
-                        events.push_back(ev);
-                        st.reverbQCutOnly = (param != 0);
-                    }
-                    // その他 (RG等) はスキップ
-                } else {
-                    // R<N>: リバーブ音量加減値（Z80: REVERVE, IX+17）
-                    pos++; // skip 'R'
-                    int rv = 0;
-                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                        rv = readInt(mml, pos, 0);
-                    MmlEvent ev{};
-                    ev.type = MmlEventType::REVERB_ENVELOPE;
-                    ev.tick = st.tick; ev.value = rv; ev.channel = ch;
-                    events.push_back(ev);
-                    st.reverbEnabled = true;  // Z80: REVERVE→SET 5,(IX+33)
-                }
+                parseReverbCommand(mml, pos, ch, st, events);
                 continue;
             }
 
@@ -786,58 +663,16 @@ private:
                 continue;
             }
 
-            // 大文字 S = CSMモード / PCM制御コマンド（S n1,n2,n3,n4）
-            // ch==2（Track C = FM ch3）: CSM_MODEイベント生成（Z80 MDSET→TO_EFC/EXMODE）
-            // その他のチャンネル: スキップ（PCM制御等）
+            // 大文字 S = CSMモード / PCM制御コマンド
             if (mml[pos] == 'S' && pos + 1 < mml.size()
                 && (std::isdigit(static_cast<unsigned char>(mml[pos+1])) || mml[pos+1] == '-')) {
-                pos++;
-                int params[4] = {0, 0, 0, 0};
-                params[0] = readInt(mml, pos, 0);
-                for (int pi = 1; pi < 4 && pos < mml.size() && mml[pos] == ','; pi++) {
-                    pos++;
-                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                        params[pi] = readInt(mml, pos, 0);
-                }
-                if (ch == 2) {
-                    // FM ch3 CSMモード: S n1,n2,n3,n4 = OP1-OP4デチューンオフセット
-                    // S0,0,0,0 = 通常モード復帰（TO_NML: reg 0x27 = 0x3A）
-                    MmlEvent ev{};
-                    ev.type = MmlEventType::CSM_MODE;
-                    ev.tick = st.tick; ev.channel = ch;
-                    ev.vibDelay = params[0];  // OP1 detune
-                    ev.vibRate  = params[1];  // OP2 detune
-                    ev.vibDepth = params[2];  // OP3 detune
-                    ev.vibCount = params[3];  // OP4 detune
-                    events.push_back(ev);
-                }
+                parseCsmOrPcmCommand(mml, pos, ch, st, events);
                 continue;
             }
 
             // 大文字 H = ハードウェアLFO（MUCOM88 HLFOON）
-            // H freq,PMS,AMS  (Z80: 0x22=freq|0x08, 0xB4+ch=(PAN&0xC0)|(AMS<<4)|PMS)
             if (mml[pos] == 'H') {
-                pos++;
-                int freq = 0, pms = 0, ams = 0;
-                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                    freq = readInt(mml, pos, 0);
-                if (pos < mml.size() && mml[pos] == ',') {
-                    pos++;
-                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                        pms = readInt(mml, pos, 0);
-                }
-                if (pos < mml.size() && mml[pos] == ',') {
-                    pos++;
-                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                        ams = readInt(mml, pos, 0);
-                }
-                MmlEvent ev{};
-                ev.type = MmlEventType::HARDWARE_LFO;
-                ev.tick = st.tick; ev.channel = ch;
-                ev.vibDelay = freq;  // LFO周波数(0-7)
-                ev.vibRate  = pms;   // PMS(0-7)
-                ev.vibDepth = ams;   // AMS(0-3)
-                events.push_back(ev);
+                parseHardwareLfo(mml, pos, ch, st, events);
                 continue;
             }
 
@@ -857,67 +692,21 @@ private:
             }
 
             // 大文字 P = SSGミキサーモード / PCMパン
-            // SSG: P0=無音, P1=トーン, P2=ノイズ, P3=トーン+ノイズ
-            // FM/リズム/ADPCM: パン（$NN形式を含む）
             if (mml[pos] == 'P') {
-                pos++;
-                int pval = 0;
-                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-' || mml[pos] == '$'))
-                    pval = readInt(mml, pos, 0);
-                if (ch >= 3 && ch <= 5) {
-                    // SSGチャンネル: ミキサーモードをREG_WRITEで設定
-                    // P値をchに紐づけたSSG_MIXERイベントとして発行
-                    // エンジン側でレジスタ0x07のビットを更新する
-                    MmlEvent ev{};
-                    ev.type = MmlEventType::REG_WRITE;
-                    ev.tick = st.tick; ev.channel = ch;
-                    // addr=0x07(mixer), data=P値+SSGインデックスを上位ビットにエンコード
-                    // エンジン側で解釈: note=0xF0+si, value=P値
-                    ev.note = 0xF0 + (ch - 3);  // 仮想アドレス: SSGミキサー制御
-                    ev.value = pval & 0x03;
-                    events.push_back(ev);
-                }
-                // FM/リズム/ADPCMの場合はスキップ（小文字pで処理済み）
+                parseSsgMixerMode(mml, pos, ch, st, events);
                 continue;
             }
 
             // 大文字 E = SSGソフトウェアエンベロープ（音符 e と区別）
-            // E AL,AR,DR,SR,SL,RR — 6パラメータ（0-255）
             if (mml[pos] == 'E' && pos + 1 < mml.size()
                 && (std::isdigit(static_cast<unsigned char>(mml[pos+1])) || mml[pos+1] == '-')) {
-                pos++;
-                MmlEvent ev{};
-                ev.type = MmlEventType::SSG_ENVELOPE;
-                ev.tick = st.tick; ev.channel = ch;
-                ev.envAL = readInt(mml, pos, 0);
-                if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envAR = readInt(mml, pos, 0); }
-                if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envDR = readInt(mml, pos, 0); }
-                if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envSL = readInt(mml, pos, 0); }
-                if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envSR = readInt(mml, pos, 0); }
-                if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envRR = readInt(mml, pos, 0); }
-                events.push_back(ev);
+                parseSsgEnvelopeCommand(mml, pos, ch, st, events);
                 continue;
             }
 
             // 大文字 D = デチューンコマンド（音符 d と区別）
-            // Wiki: D+N = 相対（現在値に加算）、DN / D-N = 絶対指定
             if (mml[pos] == 'D') {
-                pos++;
-                int detune = 0;
-                bool relative = false;
-                if (pos < mml.size() && mml[pos] == '+') {
-                    relative = true;
-                    pos++;
-                }
-                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                    detune = readInt(mml, pos, 0);
-                if (relative)
-                    detune = st.detune + detune;  // 相対: 現在値に加算
-                st.detune = detune;
-                MmlEvent ev{};
-                ev.type = MmlEventType::DETUNE;
-                ev.tick = st.tick; ev.value = detune; ev.channel = ch;
-                events.push_back(ev);
+                parseDetuneCommand(mml, pos, ch, st, events);
                 continue;
             }
 
@@ -1166,84 +955,7 @@ private:
                 break;
             }
             case ']': {
-                pos++;
-                int count = 2;  // デフォルト2回
-                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
-                    count = readInt(mml, pos, 2);
-                count = std::clamp(count, 1, 256);  // 繰り返し回数上限
-
-                if (!st.loopStack.empty()) {
-                    auto lf = st.loopStack.back();
-                    st.loopStack.pop_back();
-
-                    // 1回目はすでにパース済み。2回目以降を展開。
-                    // 1回目のイベント列を保存
-                    std::vector<MmlEvent> loopBody(
-                        events.begin() + lf.eventStart, events.end());
-                    uint32_t bodyTicks = st.tick - lf.startTick;
-                    // Z80互換: ループ内 (/) ボリューム累積補正
-                    // Z80はランタイムで毎回(/)を実行→累積的に音量が変化
-                    // MmlParserは1回目のイベントをコピーするため、VOLUMEイベントの
-                    // 絶対値を反復ごとにデルタ分ずらす必要がある
-                    int volDelta = st.volume - lf.volumeAtStart; // 1反復あたりの音量変化
-                    int maxVol = (ch == 10) ? 255 : (ch == 6) ? 63 : 15;
-
-                    // ループ本体に絶対音量設定(vコマンド, note==0)がある場合はvolDelta=0
-                    // vコマンドは毎回ボリュームをリセットするため、(/)の累積補正は不要
-                    // 例: [v11(2bb)4]3 → v11が毎回リセット、各イテレーション同一
-                    // note==2: (/)コマンド、note==3: エコー音量 → どちらも補正対象（volDelta有効）
-                    // note==0: vコマンド（絶対設定）→ volDelta=0
-                    if (volDelta != 0) {
-                        for (size_t ei = lf.eventStart; ei < events.size(); ei++) {
-                            if (events[ei].type == MmlEventType::VOLUME && events[ei].note == 0) {
-                                volDelta = 0;
-                                break;
-                            }
-                        }
-                    }
-
-                    // ブレーク情報
-                    bool hasBreak = (lf.breakPos != std::string::npos);
-                    size_t breakRelIdx = hasBreak ? (lf.breakEvIdx - lf.eventStart) : loopBody.size();
-                    uint32_t breakRelTick = hasBreak ? (lf.breakTick - lf.startTick) : bodyTicks;
-
-                    for (int rep = 1; rep < count; rep++) {
-                        bool isLast = (rep == count - 1);
-                        size_t limit = (isLast && hasBreak) ? breakRelIdx : loopBody.size();
-                        uint32_t tickLimit = (isLast && hasBreak) ? breakRelTick : bodyTicks;
-                        for (size_t ei = 0; ei < limit; ei++) {
-                            MmlEvent ev = loopBody[ei];
-                            // tick をベースからのオフセットに再計算
-                            ev.tick = (loopBody[ei].tick - lf.startTick) + (lf.startTick + rep * bodyTicks);
-                            // VOLUMEイベント: (/)による累積変化を反映
-                            // note==2: 相対音量変更（(/)コマンド）— 補正対象
-                            // note==3: エコー音量（\コマンド）— 補正対象
-                            // note==0: 絶対音量設定（vコマンド）— 累積補正しない
-                            if (ev.type == MmlEventType::VOLUME && volDelta != 0 && (ev.note == 2 || ev.note == 3)) {
-                                // Z80 VOLUPF: FM はクランプなし（IX+6に+4含むため負値OK）
-                                if (isFMChannel(ch)) {
-                                    ev.value = ev.value + rep * volDelta;  // クランプなし
-                                } else {
-                                    ev.value = std::clamp(ev.value + rep * volDelta, 0, maxVol);
-                                }
-                            }
-                            events.push_back(ev);
-                        }
-                        if (isLast && hasBreak)
-                            st.tick = lf.startTick + rep * bodyTicks + tickLimit;
-                        else
-                            st.tick = lf.startTick + (rep + 1) * bodyTicks;
-                    }
-                    // パーサーのボリューム状態を最終反復の値に更新
-                    if (volDelta != 0) {
-                        // Z80 VOLUPF: FMはクランプなし（負値許容）
-                        if (isFMChannel(ch)) {
-                            st.volume = st.volume + (count - 1) * volDelta;
-                        } else {
-                            st.volume = std::clamp(st.volume + (count - 1) * volDelta, 0, maxVol);
-                        }
-                    }
-                }
+                parseBracketLoopEnd(mml, pos, ch, st, events);
                 break;
             }
             // ── 相対音量 ( ) ──────────────────────────
@@ -1284,119 +996,12 @@ private:
                 break;
             }
             // (Detune 'D' は大文字判定で先に処理済み)
-            // ── 以下はスキップする未実装コマンド ──────────
             case 'm': {
-                // M ビブラート: Mn1,n2,n3,n4 / MF / MW / MC / ML / MD
-                pos++;
-                if (pos < mml.size()) {
-                    char sub = std::tolower(static_cast<unsigned char>(mml[pos]));
-                    if (sub == 'f') {
-                        // MF0 = LFO OFF, MF1 = LFO ON
-                        pos++;
-                        int sw = 0;
-                        if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
-                            sw = readInt(mml, pos, 0);
-                        MmlEvent ev{};
-                        ev.type = MmlEventType::VIBRATO_SWITCH;
-                        ev.tick = st.tick; ev.value = sw; ev.channel = ch;
-                        events.push_back(ev);
-                        break;
-                    }
-                    if (sub == 'w' || sub == 'c' || sub == 'l' || sub == 'd') {
-                        // MW=delay, MC=clock_unit, ML=amplitude, MD=count
-                        // LFO個別パラメータ変更（Z80 LFOON後に個別上書き）
-                        int paramType = (sub == 'w') ? 0 : (sub == 'c') ? 1 : (sub == 'l') ? 2 : 3;
-                        pos++;
-                        int val = 0;
-                        if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
-                            val = readInt(mml, pos, 0);
-                        MmlEvent ev{};
-                        ev.type = MmlEventType::LFO_PARAM;
-                        ev.tick = st.tick; ev.channel = ch;
-                        ev.vibDelay = paramType;
-                        ev.value = val;
-                        events.push_back(ev);
-                        break;
-                    }
-                }
-                {
-                    // Mn1,n2,n3,n4 — カンマ区切り4パラメーター
-                    int params[4] = {0, 0, 0, 0};
-                    for (int pi = 0; pi < 4 && pos < mml.size(); pi++) {
-                        if (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-')
-                            params[pi] = readInt(mml, pos, 0);
-                        if (pos < mml.size() && mml[pos] == ',') pos++;
-                        else break;
-                    }
-                    MmlEvent ev{};
-                    ev.type = MmlEventType::VIBRATO;
-                    ev.tick = st.tick; ev.channel = ch;
-                    ev.vibDelay = params[0];
-                    ev.vibRate  = params[1];
-                    ev.vibDepth = params[2];
-                    ev.vibCount = params[3];
-                    events.push_back(ev);
-                }
+                parseVibratoCommand(mml, pos, ch, st, events);
                 break;
             }
             case '{': {
-                // ポルタメント {note1[duration]note2}
-                // Z80: CULPTM(expand.asm:756)で開始音/終了音のF-Number差分を計算、
-                //       毎tick F-Numberを更新してピッチスライド
-                pos++; // skip '{'
-                // 空白スキップ
-                while (pos < mml.size() && (mml[pos] == ' ' || mml[pos] == '\t')) pos++;
-
-                // 開始音をパースしてNOTE_ON/NOTE_OFFを生成
-                size_t evCountBefore = events.size();
-                if (pos < mml.size()) {
-                    char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
-                    if (nc >= 'a' && nc <= 'g') {
-                        parseNote(mml, pos, ch, st, events);
-                    }
-                }
-
-                // 終了音をパース（ノート番号のみ取得、tick消費なし）
-                // 空白スキップ
-                while (pos < mml.size() && (mml[pos] == ' ' || mml[pos] == '\t')) pos++;
-                int endNote = -1;
-                if (pos < mml.size() && mml[pos] != '}') {
-                    static const int noteOffsets[] = { 9, 11, 0, 2, 4, 5, 7 }; // a-g
-                    char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
-                    if (nc >= 'a' && nc <= 'g') {
-                        int semi = noteOffsets[nc - 'a'];
-                        pos++;
-                        if (pos < mml.size()) {
-                            char sc = mml[pos];
-                            if (sc == '+' || sc == '#') { semi++; pos++; }
-                            else if (sc == '-')          { semi--; pos++; }
-                        }
-                        endNote = (st.octave + 1) * 12 + semi + st.transpose;
-                        endNote = std::clamp(endNote, 0, 127);
-                    }
-                }
-
-                // PORTAMENTOイベントをNOTE_ONの直前に挿入
-                if (endNote >= 0 && events.size() > evCountBefore) {
-                    // parseNoteが生成したNOTE_ONイベントを探す
-                    for (size_t i = evCountBefore; i < events.size(); i++) {
-                        if (events[i].type == MmlEventType::NOTE_ON) {
-                            MmlEvent pe{};
-                            pe.type     = MmlEventType::PORTAMENTO;
-                            pe.tick     = events[i].tick;
-                            pe.note     = events[i].note;  // 開始音
-                            pe.value    = endNote;          // 終了音
-                            pe.duration = events[i].duration; // tick数
-                            pe.channel  = ch;
-                            events.insert(events.begin() + static_cast<int>(i), pe);
-                            break;
-                        }
-                    }
-                }
-
-                // 閉じ '}' までスキップ
-                while (pos < mml.size() && mml[pos] != '}') pos++;
-                if (pos < mml.size()) pos++; // skip '}'
+                parsePortamentoCommand(mml, pos, ch, st, events);
                 break;
             }
             case '%': {
@@ -1412,71 +1017,7 @@ private:
                 break;
             }
             case 'y': {
-                // 直接レジスタ書き込み y<addr>,<data>
-                // yXX,slot,data 形式: FM拡張レジスタ名
-                pos++;
-                if (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
-                    // 拡張レジスタ名をパース
-                    std::string regName;
-                    while (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
-                        regName += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
-                        pos++;
-                    }
-                    // yDM/yTL/yKA/yDR/ySR/ySL/ySE → ベースレジスタ
-                    int baseReg = -1;
-                    if      (regName == "DM") baseReg = 0x30;
-                    else if (regName == "TL") baseReg = 0x40;
-                    else if (regName == "KA") baseReg = 0x50;
-                    else if (regName == "DR") baseReg = 0x60;
-                    else if (regName == "SR") baseReg = 0x70;
-                    else if (regName == "SL") baseReg = 0x80;
-                    else if (regName == "SE") baseReg = 0x90;
-
-                    if (baseReg >= 0) {
-                        // ,slot,data
-                        int slot = 0, data = 0;
-                        if (pos < mml.size() && mml[pos] == ',') { pos++; slot = readInt(mml, pos, 0); }
-                        if (pos < mml.size() && mml[pos] == ',') { pos++; data = readInt(mml, pos, 0); }
-                        // Z80互換: スロット番号は1-based（1-4）
-                        // Z80 SETR4: slot 2↔3 スワップ後、DEC A, *4
-                        //   slot 1→op1(off=0), 2→op3(off=8), 3→op2(off=4), 4→op4(off=12)
-                        static const int slotOff[] = { 0, 8, 4, 12 };
-                        int si = slot - 1;  // 1-based → 0-based
-                        int off = (si >= 0 && si <= 3) ? slotOff[si] : 0;
-                        // Z80 SETR8: COMNOW(チャンネル番号)をオフセットに加算
-                        // FM ch A-C(0-2): port0, offset=ch
-                        // FM ch H-J(7-9): port1(+0x100), offset=ch-7
-                        int chOff = 0;
-                        int portBase = 0;
-                        if (ch <= 2) {
-                            chOff = ch;   // A=0, B=1, C=2
-                        } else if (ch >= 7 && ch <= 9) {
-                            chOff = ch - 7;   // H=0, I=1, J=2
-                            portBase = 0x100;  // port 1
-                        }
-                        int addr = portBase + baseReg + off + chOff;
-                        MmlEvent ev{};
-                        ev.type = MmlEventType::REG_WRITE;
-                        ev.tick = st.tick; ev.channel = ch;
-                        ev.note = addr;
-                        ev.value = data;
-                        events.push_back(ev);
-                    }
-                    // 未知のレジスタ名はスキップ
-                    break;
-                }
-                int addr = readInt(mml, pos, 0);
-                int data = 0;
-                if (pos < mml.size() && mml[pos] == ',') {
-                    pos++;
-                    data = readInt(mml, pos, 0);
-                }
-                MmlEvent ev{};
-                ev.type = MmlEventType::REG_WRITE;
-                ev.tick = st.tick; ev.channel = ch;
-                ev.note = addr;    // addr を note フィールドに格納
-                ev.value = data;   // data を value フィールドに格納
-                events.push_back(ev);
+                parseRegWriteCommand(mml, pos, ch, st, events);
                 break;
             }
             case 'k': {
@@ -1535,6 +1076,629 @@ private:
         events.push_back(end);
     }
 
+    // ==========================================================================
+    // parseChannelMml から抽出したコマンドハンドラー
+    // ==========================================================================
+
+    // (a) エコーマクロ（\コマンド、MUCOM88 SETBEF互換）
+    // Z80コンパイラのBFDAT/VDDATはグローバル変数 → m_echoBufIdx/m_echoVolRed
+    // \=N,M: エコーパラメータ設定（N=トーンバッファインデックス1-9, M=音量減衰0-15）
+    // \: 直前のノートを音量-Mで再発音（Z80では常に実行、"echo off"状態は存在しない）
+    void parseEchoCommand(const std::string& mml, size_t& pos, int ch,
+                          State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip '\\'
+        if (pos < mml.size() && mml[pos] == '=') {
+            // \=N,M: パラメータ設定（グローバル、全チャンネル共有）
+            pos++;
+            int n = 1;
+            if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
+                n = readInt(mml, pos, 1);
+            if (n < 1) n = 1;
+            if (n > 9) n = 9;
+            m_echoBufIdx = n - 1;  // Z80 BFDAT = N-1（BEFTONEバッファインデックス）
+            if (pos < mml.size() && mml[pos] == ',') {
+                pos++;
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
+                    m_echoVolRed = readInt(mml, pos, 0);
+            }
+        } else if (st.lastFullTicks > 0) {
+            // \: 直前のノートをエコー再生（Z80 STBF3互換）
+            // Z80はBEFCO（直前ノートのフル音長、staccato適用前）を使用する。
+            // events[i].durationはstaccato適用後のkeyOnTicksなので、
+            // st.lastFullTicks（= Z80のBEFCO相当）でtickを進める。
+            // Z80 STBF3にはechoCount>0チェックがない — \は常にエコーを生成する
+            uint32_t echoDur = st.lastFullTicks;  // Z80 BEFCO互換
+            for (int i = static_cast<int>(events.size()) - 1; i >= 0; i--) {
+                if (events[i].type == MmlEventType::NOTE_ON && events[i].channel == ch) {
+                    // 音量下げイベント
+                    MmlEvent volDown{};
+                    volDown.type = MmlEventType::VOLUME;
+                    volDown.tick = st.tick;
+                    // Z80 STBF3: 0xFB(-M) → VOLUPF → ADD A,(IX+6) — クランプなし
+                    // FM: IX+6は+4オフセット含みのため負値許容（Issue #57と同じ）
+                    // SSG: VOLUPS → RET NC で範囲外なら変更しない → 0クランプ
+                    if (isFMChannel(ch)) {
+                        volDown.value = st.volume - m_echoVolRed;  // FM: クランプなし
+                    } else {
+                        volDown.value = std::max(st.volume - m_echoVolRed, 0);
+                    }
+                    volDown.channel = ch;
+                    volDown.note = 3;  // エコー音量マーカー（ブラケットループvolDelta補正対象、vコマンド検出除外）
+                    events.push_back(volDown);
+
+                    // ノート複製（同じ音高、フル音長で発音）
+                    MmlEvent echoOn = events[i];
+                    echoOn.tick = st.tick;
+                    echoOn.duration = echoDur;
+                    events.push_back(echoOn);
+
+                    // NOTE_OFF
+                    MmlEvent echoOff{};
+                    echoOff.type = MmlEventType::NOTE_OFF;
+                    echoOff.tick = st.tick + echoDur;
+                    echoOff.note = events[i].note;
+                    echoOff.channel = ch;
+                    events.push_back(echoOff);
+
+                    st.tick += echoDur;
+
+                    // 音量復帰
+                    MmlEvent volUp{};
+                    volUp.type = MmlEventType::VOLUME;
+                    volUp.tick = st.tick;
+                    volUp.value = st.volume;
+                    volUp.channel = ch;
+                    volUp.note = 3;  // エコー音量マーカー
+                    events.push_back(volUp);
+                    break;
+                }
+            }
+        }
+    }
+
+    // (b) 大文字 T = テンポ（BPM指定）→ Timer-B値に変換
+    // 小文字 t = Timer-B直接値（switch文内で処理）
+    void parseTempoBpm(const std::string& mml, size_t& pos, int ch,
+                       State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'T'
+        int bpm = readInt(mml, pos, 120);
+        // BPM → Timer-B値変換
+        // Timer-B period = (256-T) * 16 / fmclock
+        // fmclock = 7987200/2/6/12 = 55466
+        // tick per minute = fmclock / 16 / (256-T)
+        // BPM = tick_per_min / PPQ_quarter
+        // ここで PPQ_quarter = wholeTick/4 (C128の場合32)
+        // T = 256 - fmclock / (16 * BPM * PPQ_quarter / 60)
+        // T = 256 - 60 * fmclock / (16 * BPM * PPQ_quarter)
+        static constexpr int FMCLOCK_INT = 7987200 / 2 / 6 / 12;  // 55466
+        int ppqQ = st.wholeTick / 4;  // 4分音符あたりのクロック数
+        if (ppqQ <= 0) ppqQ = 32;
+        if (bpm <= 0) bpm = 120;
+        int tb = 256 - static_cast<int>(60.0 * FMCLOCK_INT / (16.0 * bpm * ppqQ));
+        tb = std::clamp(tb, 0, 255);
+        st.tempo = tb;
+        MmlEvent ev{};
+        ev.type = MmlEventType::TEMPO;
+        ev.tick = st.tick; ev.value = tb; ev.channel = ch;
+        events.push_back(ev);
+    }
+
+    // (c) 大文字 R = リバーブ（MUCOM88 REVERVE/REVSW/REVMOD）
+    // 小文字 r（休符）と区別するため tolower の前で処理
+    void parseReverbCommand(const std::string& mml, size_t& pos, int ch,
+                            State& st, std::vector<MmlEvent>& events)
+    {
+        if (pos + 1 < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos+1]))) {
+            pos++; // skip 'R'
+            // サブコマンド文字列を取得
+            std::string sub;
+            while (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
+                sub += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
+                pos++;
+            }
+            int param = 0;
+            if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+                param = readInt(mml, pos, 0);
+
+            if (sub == "F") {
+                // RF0/RF1: リバーブスイッチ
+                MmlEvent ev{};
+                ev.type = MmlEventType::REVERB_SWITCH;
+                ev.tick = st.tick; ev.value = param; ev.channel = ch;
+                events.push_back(ev);
+                st.reverbEnabled = (param != 0);
+            } else if (sub == "M") {
+                // Rm0/Rm1: リバーブモード
+                MmlEvent ev{};
+                ev.type = MmlEventType::REVERB_MODE;
+                ev.tick = st.tick; ev.value = param; ev.channel = ch;
+                events.push_back(ev);
+                st.reverbQCutOnly = (param != 0);
+            }
+            // その他 (RG等) はスキップ
+        } else {
+            // R<N>: リバーブ音量加減値（Z80: REVERVE, IX+17）
+            pos++; // skip 'R'
+            int rv = 0;
+            if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+                rv = readInt(mml, pos, 0);
+            MmlEvent ev{};
+            ev.type = MmlEventType::REVERB_ENVELOPE;
+            ev.tick = st.tick; ev.value = rv; ev.channel = ch;
+            events.push_back(ev);
+            st.reverbEnabled = true;  // Z80: REVERVE→SET 5,(IX+33)
+        }
+    }
+
+    // (d) 大文字 S = CSMモード / PCM制御コマンド（S n1,n2,n3,n4）
+    // ch==2（Track C = FM ch3）: CSM_MODEイベント生成（Z80 MDSET→TO_EFC/EXMODE）
+    // その他のチャンネル: スキップ（PCM制御等）
+    void parseCsmOrPcmCommand(const std::string& mml, size_t& pos, int ch,
+                              State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'S'
+        int params[4] = {0, 0, 0, 0};
+        params[0] = readInt(mml, pos, 0);
+        for (int pi = 1; pi < 4 && pos < mml.size() && mml[pos] == ','; pi++) {
+            pos++;
+            if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+                params[pi] = readInt(mml, pos, 0);
+        }
+        if (ch == 2) {
+            // FM ch3 CSMモード: S n1,n2,n3,n4 = OP1-OP4デチューンオフセット
+            // S0,0,0,0 = 通常モード復帰（TO_NML: reg 0x27 = 0x3A）
+            MmlEvent ev{};
+            ev.type = MmlEventType::CSM_MODE;
+            ev.tick = st.tick; ev.channel = ch;
+            ev.vibDelay = params[0];  // OP1 detune
+            ev.vibRate  = params[1];  // OP2 detune
+            ev.vibDepth = params[2];  // OP3 detune
+            ev.vibCount = params[3];  // OP4 detune
+            events.push_back(ev);
+        }
+    }
+
+    // (e) 大文字 H = ハードウェアLFO（MUCOM88 HLFOON）
+    // H freq,PMS,AMS  (Z80: 0x22=freq|0x08, 0xB4+ch=(PAN&0xC0)|(AMS<<4)|PMS)
+    void parseHardwareLfo(const std::string& mml, size_t& pos, int ch,
+                          State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'H'
+        int freq = 0, pms = 0, ams = 0;
+        if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+            freq = readInt(mml, pos, 0);
+        if (pos < mml.size() && mml[pos] == ',') {
+            pos++;
+            if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+                pms = readInt(mml, pos, 0);
+        }
+        if (pos < mml.size() && mml[pos] == ',') {
+            pos++;
+            if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+                ams = readInt(mml, pos, 0);
+        }
+        MmlEvent ev{};
+        ev.type = MmlEventType::HARDWARE_LFO;
+        ev.tick = st.tick; ev.channel = ch;
+        ev.vibDelay = freq;  // LFO周波数(0-7)
+        ev.vibRate  = pms;   // PMS(0-7)
+        ev.vibDepth = ams;   // AMS(0-3)
+        events.push_back(ev);
+    }
+
+    // (f) 大文字 P = SSGミキサーモード / PCMパン
+    // SSG: P0=無音, P1=トーン, P2=ノイズ, P3=トーン+ノイズ
+    // FM/リズム/ADPCM: パン（$NN形式を含む）
+    void parseSsgMixerMode(const std::string& mml, size_t& pos, int ch,
+                           State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'P'
+        int pval = 0;
+        if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-' || mml[pos] == '$'))
+            pval = readInt(mml, pos, 0);
+        if (ch >= 3 && ch <= 5) {
+            // SSGチャンネル: ミキサーモードをREG_WRITEで設定
+            // P値をchに紐づけたSSG_MIXERイベントとして発行
+            // エンジン側でレジスタ0x07のビットを更新する
+            MmlEvent ev{};
+            ev.type = MmlEventType::REG_WRITE;
+            ev.tick = st.tick; ev.channel = ch;
+            // addr=0x07(mixer), data=P値+SSGインデックスを上位ビットにエンコード
+            // エンジン側で解釈: note=0xF0+si, value=P値
+            ev.note = 0xF0 + (ch - 3);  // 仮想アドレス: SSGミキサー制御
+            ev.value = pval & 0x03;
+            events.push_back(ev);
+        }
+        // FM/リズム/ADPCMの場合はスキップ（小文字pで処理済み）
+    }
+
+    // (g) 大文字 E = SSGソフトウェアエンベロープ（音符 e と区別）
+    // E AL,AR,DR,SR,SL,RR — 6パラメータ（0-255）
+    void parseSsgEnvelopeCommand(const std::string& mml, size_t& pos, int ch,
+                                 State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'E'
+        MmlEvent ev{};
+        ev.type = MmlEventType::SSG_ENVELOPE;
+        ev.tick = st.tick; ev.channel = ch;
+        ev.envAL = readInt(mml, pos, 0);
+        if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envAR = readInt(mml, pos, 0); }
+        if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envDR = readInt(mml, pos, 0); }
+        if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envSL = readInt(mml, pos, 0); }
+        if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envSR = readInt(mml, pos, 0); }
+        if (pos < mml.size() && mml[pos] == ',') { pos++; ev.envRR = readInt(mml, pos, 0); }
+        events.push_back(ev);
+    }
+
+    // (h) 大文字 D = デチューンコマンド（音符 d と区別）
+    // Wiki: D+N = 相対（現在値に加算）、DN / D-N = 絶対指定
+    void parseDetuneCommand(const std::string& mml, size_t& pos, int ch,
+                            State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'D'
+        int detune = 0;
+        bool relative = false;
+        if (pos < mml.size() && mml[pos] == '+') {
+            relative = true;
+            pos++;
+        }
+        if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+            detune = readInt(mml, pos, 0);
+        if (relative)
+            detune = st.detune + detune;  // 相対: 現在値に加算
+        st.detune = detune;
+        MmlEvent ev{};
+        ev.type = MmlEventType::DETUNE;
+        ev.tick = st.tick; ev.value = detune; ev.channel = ch;
+        events.push_back(ev);
+    }
+
+    // (i) M ビブラート: Mn1,n2,n3,n4 / MF / MW / MC / ML / MD
+    void parseVibratoCommand(const std::string& mml, size_t& pos, int ch,
+                             State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'm'
+        if (pos < mml.size()) {
+            char sub = std::tolower(static_cast<unsigned char>(mml[pos]));
+            if (sub == 'f') {
+                // MF0 = LFO OFF, MF1 = LFO ON
+                pos++;
+                int sw = 0;
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
+                    sw = readInt(mml, pos, 0);
+                MmlEvent ev{};
+                ev.type = MmlEventType::VIBRATO_SWITCH;
+                ev.tick = st.tick; ev.value = sw; ev.channel = ch;
+                events.push_back(ev);
+                return;
+            }
+            if (sub == 'w' || sub == 'c' || sub == 'l' || sub == 'd') {
+                // MW=delay, MC=clock_unit, ML=amplitude, MD=count
+                // LFO個別パラメータ変更（Z80 LFOON後に個別上書き）
+                int paramType = (sub == 'w') ? 0 : (sub == 'c') ? 1 : (sub == 'l') ? 2 : 3;
+                pos++;
+                int val = 0;
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
+                    val = readInt(mml, pos, 0);
+                MmlEvent ev{};
+                ev.type = MmlEventType::LFO_PARAM;
+                ev.tick = st.tick; ev.channel = ch;
+                ev.vibDelay = paramType;
+                ev.value = val;
+                events.push_back(ev);
+                return;
+            }
+        }
+        {
+            // Mn1,n2,n3,n4 — カンマ区切り4パラメーター
+            int params[4] = {0, 0, 0, 0};
+            for (int pi = 0; pi < 4 && pos < mml.size(); pi++) {
+                if (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-')
+                    params[pi] = readInt(mml, pos, 0);
+                if (pos < mml.size() && mml[pos] == ',') pos++;
+                else break;
+            }
+            MmlEvent ev{};
+            ev.type = MmlEventType::VIBRATO;
+            ev.tick = st.tick; ev.channel = ch;
+            ev.vibDelay = params[0];
+            ev.vibRate  = params[1];
+            ev.vibDepth = params[2];
+            ev.vibCount = params[3];
+            events.push_back(ev);
+        }
+    }
+
+    // (j) ポルタメント {note1[duration]note2}
+    // Z80: CULPTM(expand.asm:756)で開始音/終了音のF-Number差分を計算、
+    //       毎tick F-Numberを更新してピッチスライド
+    void parsePortamentoCommand(const std::string& mml, size_t& pos, int ch,
+                                State& st, std::vector<MmlEvent>& events)
+    {
+        pos++; // skip '{'
+        // 空白スキップ
+        while (pos < mml.size() && (mml[pos] == ' ' || mml[pos] == '\t')) pos++;
+
+        // 開始音をパースしてNOTE_ON/NOTE_OFFを生成
+        size_t evCountBefore = events.size();
+        if (pos < mml.size()) {
+            char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
+            if (nc >= 'a' && nc <= 'g') {
+                parseNote(mml, pos, ch, st, events);
+            }
+        }
+
+        // 終了音をパース（ノート番号のみ取得、tick消費なし）
+        // 空白スキップ
+        while (pos < mml.size() && (mml[pos] == ' ' || mml[pos] == '\t')) pos++;
+        int endNote = -1;
+        if (pos < mml.size() && mml[pos] != '}') {
+            static const int noteOffsets[] = { 9, 11, 0, 2, 4, 5, 7 }; // a-g
+            char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
+            if (nc >= 'a' && nc <= 'g') {
+                int semi = noteOffsets[nc - 'a'];
+                pos++;
+                if (pos < mml.size()) {
+                    char sc = mml[pos];
+                    if (sc == '+' || sc == '#') { semi++; pos++; }
+                    else if (sc == '-')          { semi--; pos++; }
+                }
+                endNote = (st.octave + 1) * 12 + semi + st.transpose;
+                endNote = std::clamp(endNote, 0, 127);
+            }
+        }
+
+        // PORTAMENTOイベントをNOTE_ONの直前に挿入
+        if (endNote >= 0 && events.size() > evCountBefore) {
+            // parseNoteが生成したNOTE_ONイベントを探す
+            for (size_t i = evCountBefore; i < events.size(); i++) {
+                if (events[i].type == MmlEventType::NOTE_ON) {
+                    MmlEvent pe{};
+                    pe.type     = MmlEventType::PORTAMENTO;
+                    pe.tick     = events[i].tick;
+                    pe.note     = events[i].note;  // 開始音
+                    pe.value    = endNote;          // 終了音
+                    pe.duration = events[i].duration; // tick数
+                    pe.channel  = ch;
+                    events.insert(events.begin() + static_cast<int>(i), pe);
+                    break;
+                }
+            }
+        }
+
+        // 閉じ '}' までスキップ
+        while (pos < mml.size() && mml[pos] != '}') pos++;
+        if (pos < mml.size()) pos++; // skip '}'
+    }
+
+    // (k) 直接レジスタ書き込み y<addr>,<data> / yXX,slot,data 形式
+    void parseRegWriteCommand(const std::string& mml, size_t& pos, int ch,
+                              State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip 'y'
+        if (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
+            // 拡張レジスタ名をパース
+            std::string regName;
+            while (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
+                regName += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
+                pos++;
+            }
+            // yDM/yTL/yKA/yDR/ySR/ySL/ySE → ベースレジスタ
+            int baseReg = -1;
+            if      (regName == "DM") baseReg = 0x30;
+            else if (regName == "TL") baseReg = 0x40;
+            else if (regName == "KA") baseReg = 0x50;
+            else if (regName == "DR") baseReg = 0x60;
+            else if (regName == "SR") baseReg = 0x70;
+            else if (regName == "SL") baseReg = 0x80;
+            else if (regName == "SE") baseReg = 0x90;
+
+            if (baseReg >= 0) {
+                // ,slot,data
+                int slot = 0, data = 0;
+                if (pos < mml.size() && mml[pos] == ',') { pos++; slot = readInt(mml, pos, 0); }
+                if (pos < mml.size() && mml[pos] == ',') { pos++; data = readInt(mml, pos, 0); }
+                // Z80互換: スロット番号は1-based（1-4）
+                // Z80 SETR4: slot 2↔3 スワップ後、DEC A, *4
+                //   slot 1→op1(off=0), 2→op3(off=8), 3→op2(off=4), 4→op4(off=12)
+                static const int slotOff[] = { 0, 8, 4, 12 };
+                int si = slot - 1;  // 1-based → 0-based
+                int off = (si >= 0 && si <= 3) ? slotOff[si] : 0;
+                // Z80 SETR8: COMNOW(チャンネル番号)をオフセットに加算
+                // FM ch A-C(0-2): port0, offset=ch
+                // FM ch H-J(7-9): port1(+0x100), offset=ch-7
+                int chOff = 0;
+                int portBase = 0;
+                if (ch <= 2) {
+                    chOff = ch;   // A=0, B=1, C=2
+                } else if (ch >= 7 && ch <= 9) {
+                    chOff = ch - 7;   // H=0, I=1, J=2
+                    portBase = 0x100;  // port 1
+                }
+                int addr = portBase + baseReg + off + chOff;
+                MmlEvent ev{};
+                ev.type = MmlEventType::REG_WRITE;
+                ev.tick = st.tick; ev.channel = ch;
+                ev.note = addr;
+                ev.value = data;
+                events.push_back(ev);
+            }
+            // 未知のレジスタ名はスキップ
+            return;
+        }
+        int addr = readInt(mml, pos, 0);
+        int data = 0;
+        if (pos < mml.size() && mml[pos] == ',') {
+            pos++;
+            data = readInt(mml, pos, 0);
+        }
+        MmlEvent ev{};
+        ev.type = MmlEventType::REG_WRITE;
+        ev.tick = st.tick; ev.channel = ch;
+        ev.note = addr;    // addr を note フィールドに格納
+        ev.value = data;   // data を value フィールドに格納
+        events.push_back(ev);
+    }
+
+    // (l) ブラケットループ終了 ']' — ループ展開処理
+    void parseBracketLoopEnd(const std::string& mml, size_t& pos, int ch,
+                             State& st, std::vector<MmlEvent>& events)
+    {
+        pos++;  // skip ']'
+        int count = 2;  // デフォルト2回
+        if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
+            count = readInt(mml, pos, 2);
+        count = std::clamp(count, 1, 256);  // 繰り返し回数上限
+
+        if (!st.loopStack.empty()) {
+            auto lf = st.loopStack.back();
+            st.loopStack.pop_back();
+
+            // 1回目はすでにパース済み。2回目以降を展開。
+            // ループ本体をインデックスで参照（O(N)コピー回避）
+            size_t loopBodySize = events.size() - lf.eventStart;
+            uint32_t bodyTicks = st.tick - lf.startTick;
+            // Z80互換: ループ内 (/) ボリューム累積補正
+            // Z80はランタイムで毎回(/)を実行→累積的に音量が変化
+            // MmlParserは1回目のイベントをコピーするため、VOLUMEイベントの
+            // 絶対値を反復ごとにデルタ分ずらす必要がある
+            int volDelta = st.volume - lf.volumeAtStart; // 1反復あたりの音量変化
+            int maxVol = (ch == 10) ? 255 : (ch == 6) ? 63 : 15;
+
+            // ループ本体に絶対音量設定(vコマンド, note==0)がある場合はvolDelta=0
+            // vコマンドは毎回ボリュームをリセットするため、(/)の累積補正は不要
+            // 例: [v11(2bb)4]3 → v11が毎回リセット、各イテレーション同一
+            // note==2: (/)コマンド、note==3: エコー音量 → どちらも補正対象（volDelta有効）
+            // note==0: vコマンド（絶対設定）→ volDelta=0
+            if (volDelta != 0) {
+                for (size_t ei = lf.eventStart; ei < events.size(); ei++) {
+                    if (events[ei].type == MmlEventType::VOLUME && events[ei].note == 0) {
+                        volDelta = 0;
+                        break;
+                    }
+                }
+            }
+
+            // ブレーク情報
+            bool hasBreak = (lf.breakPos != std::string::npos);
+            size_t breakRelIdx = hasBreak ? (lf.breakEvIdx - lf.eventStart) : loopBodySize;
+            uint32_t breakRelTick = hasBreak ? (lf.breakTick - lf.startTick) : bodyTicks;
+
+            for (int rep = 1; rep < count; rep++) {
+                bool isLast = (rep == count - 1);
+                size_t limit = (isLast && hasBreak) ? breakRelIdx : loopBodySize;
+                uint32_t tickLimit = (isLast && hasBreak) ? breakRelTick : bodyTicks;
+                for (size_t ei = 0; ei < limit; ei++) {
+                    MmlEvent ev = events[lf.eventStart + ei];
+                    // tick をベースからのオフセットに再計算
+                    ev.tick = (events[lf.eventStart + ei].tick - lf.startTick) + (lf.startTick + rep * bodyTicks);
+                    // VOLUMEイベント: (/)による累積変化を反映
+                    // note==2: 相対音量変更（(/)コマンド）— 補正対象
+                    // note==3: エコー音量（\コマンド）— 補正対象
+                    // note==0: 絶対音量設定（vコマンド）— 累積補正しない
+                    if (ev.type == MmlEventType::VOLUME && volDelta != 0 && (ev.note == 2 || ev.note == 3)) {
+                        // Z80 VOLUPF: FM はクランプなし（IX+6に+4含むため負値OK）
+                        if (isFMChannel(ch)) {
+                            ev.value = ev.value + rep * volDelta;  // クランプなし
+                        } else {
+                            ev.value = std::clamp(ev.value + rep * volDelta, 0, maxVol);
+                        }
+                    }
+                    events.push_back(ev);
+                }
+                if (isLast && hasBreak)
+                    st.tick = lf.startTick + rep * bodyTicks + tickLimit;
+                else
+                    st.tick = lf.startTick + (rep + 1) * bodyTicks;
+            }
+            // パーサーのボリューム状態を最終反復の値に更新
+            if (volDelta != 0) {
+                // Z80 VOLUPF: FMはクランプなし（負値許容）
+                if (isFMChannel(ch)) {
+                    st.volume = st.volume + (count - 1) * volDelta;
+                } else {
+                    st.volume = std::clamp(st.volume + (count - 1) * volDelta, 0, maxVol);
+                }
+            }
+        }
+    }
+
+    // ==========================================================================
+    // parseNote から抽出したタイ境界生成
+    // ==========================================================================
+
+    // (MN-2) ^タイ境界 + Z80自動分割境界のTIE_KEYOFFイベント生成（Z80 FMSUB3互換）
+    // Z80コンパイラは7bit長制限（max 127 ticks/bytecode entry）で自動分割し、
+    // 各分割点にtie bitを設定。FMSUB3でRm1→FS3(KEYOFF), Rm0→FS2(リバーブ音量)
+    //
+    // 自動分割は^セグメント内でのみ適用。&セグメント内の自動分割は対象外:
+    // Z80では&境界でKEY_ON(FMSUB9)が即座に実行されるため、
+    // 直前の自動分割KEY_OFFは1tick以内にKEY_ONで打ち消される。
+    // 我々のエンジンには&境界のKEY_ONがないため、自動分割KEY_OFFを
+    // 出すとリリース状態が継続し退行する。
+    void generateTieBoundaries(
+        const std::vector<uint32_t>& tieBoundaries,
+        const std::vector<uint32_t>& ampSegStarts,
+        uint32_t totalTicks, uint32_t baseTick,
+        int noteNum, int ch,
+        std::vector<MmlEvent>& events)
+    {
+        // ^境界のみでセグメント分割（&境界は自動分割の区切りに使わない）
+        std::vector<uint32_t> segPoints;
+        segPoints.push_back(0);
+        for (uint32_t b : tieBoundaries) segPoints.push_back(b);
+        segPoints.push_back(totalTicks);
+        // 各セグメント内の127tick超を自動分割
+        std::vector<uint32_t> allBoundaries;
+        for (size_t s = 0; s + 1 < segPoints.size(); s++) {
+            uint32_t segStart = segPoints[s];
+            uint32_t segEnd   = segPoints[s + 1];
+            uint32_t segLen   = segEnd - segStart;
+            // &境界がこのセグメント内にあるか確認
+            // ある場合、自動分割を完全スキップ
+            // Z80では&境界でKEY_ON(FMSUB9)が即座に実行されるため、
+            // 自動分割KEY_OFFは1tick以内にKEY_ONで打ち消される。
+            // 我々のエンジンには&境界のKEY_ONがないため自動分割は害になる。
+            bool hasAmpInSegment = false;
+            for (uint32_t as : ampSegStarts) {
+                if (as > segStart && as <= segEnd) {
+                    hasAmpInSegment = true;
+                    break;
+                }
+            }
+            // Z80: 127tick超のセグメントを127tickずつ分割（&なしの場合のみ）
+            if (!hasAmpInSegment) {
+                uint32_t remain = segLen;
+                uint32_t p = segStart;
+                while (remain > 127) {
+                    p += 127;
+                    allBoundaries.push_back(p);
+                    remain -= 127;
+                }
+            }
+            // ^境界は明示的KEY_OFF
+            if (s + 1 < segPoints.size() - 1)
+                allBoundaries.push_back(segEnd);
+        }
+        // 重複除去・ソート
+        std::sort(allBoundaries.begin(), allBoundaries.end());
+        allBoundaries.erase(std::unique(allBoundaries.begin(), allBoundaries.end()),
+                            allBoundaries.end());
+        for (uint32_t boundary : allBoundaries) {
+            MmlEvent tkev{};
+            tkev.type    = MmlEventType::TIE_KEYOFF;
+            tkev.tick    = baseTick + boundary;
+            tkev.note    = noteNum;
+            tkev.channel = ch;
+            events.push_back(tkev);
+        }
+    }
+
+    // ==========================================================================
+    // parseNote: ノート（音符）パース
+    // ==========================================================================
     void parseNote(const std::string& mml, size_t& pos, int ch,
                    State& st, std::vector<MmlEvent>& events)
     {
@@ -1716,65 +1880,10 @@ private:
         on.channel  = ch;
         events.push_back(on);
 
-        // ^タイ境界 + Z80自動分割境界のTIE_KEYOFFイベント生成（Z80 FMSUB3互換）
-        // Z80コンパイラは7bit長制限（max 127 ticks/bytecode entry）で自動分割し、
-        // 各分割点にtie bitを設定。FMSUB3でRm1→FS3(KEYOFF), Rm0→FS2(リバーブ音量)
-        //
-        // 自動分割は^セグメント内でのみ適用。&セグメント内の自動分割は対象外:
-        // Z80では&境界でKEY_ON(FMSUB9)が即座に実行されるため、
-        // 直前の自動分割KEY_OFFは1tick以内にKEY_ONで打ち消される。
-        // 我々のエンジンには&境界のKEY_ONがないため、自動分割KEY_OFFを
-        // 出すとリリース状態が継続し退行する。
+        // ^タイ境界 + Z80自動分割境界のTIE_KEYOFFイベント生成
         if (collectTieBoundaries) {
-            // ^境界のみでセグメント分割（&境界は自動分割の区切りに使わない）
-            std::vector<uint32_t> segPoints;
-            segPoints.push_back(0);
-            for (uint32_t b : tieBoundaries) segPoints.push_back(b);
-            segPoints.push_back(ticks);
-            // 各セグメント内の127tick超を自動分割
-            std::vector<uint32_t> allBoundaries;
-            for (size_t s = 0; s + 1 < segPoints.size(); s++) {
-                uint32_t segStart = segPoints[s];
-                uint32_t segEnd   = segPoints[s + 1];
-                uint32_t segLen   = segEnd - segStart;
-                // &境界がこのセグメント内にあるか確認
-                // ある場合、自動分割を完全スキップ
-                // Z80では&境界でKEY_ON(FMSUB9)が即座に実行されるため、
-                // 自動分割KEY_OFFは1tick以内にKEY_ONで打ち消される。
-                // 我々のエンジンには&境界のKEY_ONがないため自動分割は害になる。
-                bool hasAmpInSegment = false;
-                for (uint32_t as : ampSegStarts) {
-                    if (as > segStart && as <= segEnd) {
-                        hasAmpInSegment = true;
-                        break;
-                    }
-                }
-                // Z80: 127tick超のセグメントを127tickずつ分割（&なしの場合のみ）
-                if (!hasAmpInSegment) {
-                    uint32_t remain = segLen;
-                    uint32_t p = segStart;
-                    while (remain > 127) {
-                        p += 127;
-                        allBoundaries.push_back(p);
-                        remain -= 127;
-                    }
-                }
-                // ^境界は明示的KEY_OFF
-                if (s + 1 < segPoints.size() - 1)
-                    allBoundaries.push_back(segEnd);
-            }
-            // 重複除去・ソート
-            std::sort(allBoundaries.begin(), allBoundaries.end());
-            allBoundaries.erase(std::unique(allBoundaries.begin(), allBoundaries.end()),
-                                allBoundaries.end());
-            for (uint32_t boundary : allBoundaries) {
-                MmlEvent tkev{};
-                tkev.type    = MmlEventType::TIE_KEYOFF;
-                tkev.tick    = st.tick + boundary;
-                tkev.note    = noteNum;
-                tkev.channel = ch;
-                events.push_back(tkev);
-            }
+            generateTieBoundaries(tieBoundaries, ampSegStarts,
+                                  ticks, st.tick, noteNum, ch, events);
         }
 
         // NOTE_OFF（タイ継続中は出さない — 次行で延長される）

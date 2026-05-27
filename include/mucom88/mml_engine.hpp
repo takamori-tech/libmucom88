@@ -28,7 +28,7 @@
 // FmPatch / Mucom88Patch は fm_common.hpp で定義済み（mml_parser.hpp 経由）
 
 // ── デフォルト音色ファクトリ ─────────────────────────────
-static Mucom88Patch makeDefaultPatch(int pno = 0)
+inline Mucom88Patch makeDefaultPatch(int pno = 0)
 {
     Mucom88Patch p;
     p.patchNo = pno; p.fb = 0; p.al = 4; p.valid = true;
@@ -106,6 +106,7 @@ public:
         m_engine     = engine;
         m_sampleRate = sampleRate;
         m_chipClock  = chipClock;
+        m_msPerSample16 = 16.0 * 1000.0 / m_sampleRate;
         for (auto& ch : m_channels) ch = ChannelState{};
         m_patchMap.clear();
         m_fmPatchNo.fill(0);
@@ -121,6 +122,15 @@ public:
     {
         if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
         m_channels[ch].events      = evts;
+        m_channels[ch].eventIdx    = 0;
+        m_channels[ch].noteOn      = false;
+    }
+
+    // ── MML イベント列をムーブセット（MucFile用・ゼロコピー）─
+    void setEvents(int ch, std::vector<MmlEvent>&& evts)
+    {
+        if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
+        m_channels[ch].events      = std::move(evts);
         m_channels[ch].eventIdx    = 0;
         m_channels[ch].noteOn      = false;
     }
@@ -226,20 +236,20 @@ public:
                 // イベント列からLOOP_POINTを探してhasLoopPointを事前設定
                 for (size_t i = 0; i < st.events.size(); i++) {
                     if (st.events[i].type == MmlEventType::LOOP_POINT) {
-                        st.hasLoopPoint = true;
-                        st.loopEventIdx = i + 1;
-                        st.loopTick     = st.events[i].tick;
+                        st.loop.hasPoint = true;
+                        st.loop.eventIdx = i + 1;
+                        st.loop.tick     = st.events[i].tick;
                         break;
                     }
                 }
                 uint32_t endTick = st.events.back().tick;
-                st.perChEndTick = endTick;
-                st.perChLoopOffset = 0;
+                st.loop.endTick = endTick;
+                st.loop.loopOffset = 0;
                 if (endTick > maxEnd) maxEnd = endTick;
-                if (!st.hasLoopPoint) continue;
+                if (!st.loop.hasPoint) continue;
                 anyLoop = true;
-                if (st.loopTick < m_commonLoopTick)
-                    m_commonLoopTick = st.loopTick;
+                if (st.loop.tick < m_commonLoopTick)
+                    m_commonLoopTick = st.loop.tick;
             }
             if (anyLoop && maxEnd > 0)
                 m_commonEndTick = maxEnd;
@@ -273,15 +283,15 @@ public:
                 m_engine->writeReg(0, i, 0x00);
             // SSG ミキサー: トーン有効, ノイズ無効（MUCOM88互換）
             m_ssgMixer = 0x38;
-            m_engine->writeReg(0, 0x07, m_ssgMixer);
+            m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
             // SSG ノイズ周期
-            m_engine->writeReg(0, 0x06, 0x00);
+            m_engine->writeReg(0, REG_SSG_NOISE, 0x00);
             // プリスケーラ + FM6chモード（reset()後にデフォルトに戻るため再設定必須）
-            m_engine->writeReg(0, 0x2D, 0x00);  // プリスケーラ mode 0 (×6)
-            m_engine->writeReg(0, 0x29, 0x80);  // FM6chモード有効（ch4-6使用に必要）
+            m_engine->writeReg(0, REG_PRESCALER, 0x00);  // プリスケーラ mode 0 (×6)
+            m_engine->writeReg(0, REG_FM6CH_MODE, 0x80);  // FM6chモード有効（ch4-6使用に必要）
             // Timer制御: 通常モード（CSMモード解除）
             // Z80 PLSET2: reg 0x27 = 0x3A（Timer-B有効、CSMなし）
-            m_engine->writeReg(0, 0x27, 0x3A);
+            m_engine->writeReg(0, REG_TIMER_CTRL, 0x3A);
 
             // FM音色を再適用
             for (int fi = 0; fi < MAX_FM_CHANNELS; fi++)
@@ -341,11 +351,11 @@ public:
                     static_cast<uint8_t>(panToReg(m_channels[ch].pan)));
             }
             // SSG: ミキサー復元
-            m_engine->writeReg(0, 0x07, m_ssgMixer);
+            m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
             // リズム: TL + IL復元
             int rhythmAtt = m_globalAtt * 63 / 127;
             int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
-            m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
+            m_engine->writeReg(0, REG_RHYTHM_TL, static_cast<uint8_t>(adjustedTL & 0x3F));
             for (int i = 0; i < 6; i++)
                 m_engine->writeReg(0, 0x18 + i, m_rhythmIL[i]);
             // ADPCM-B: ボリューム復元（ボイス再生中はスキップ）
@@ -372,7 +382,7 @@ public:
     [[nodiscard]] int  chNote(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].currentNote : 0; }
     [[nodiscard]] int  chVolume(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].volume : 0; }
     [[nodiscard]] int  chPan(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].pan : 3; }
-    [[nodiscard]] int  chReverb(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].reverbValue : 0; }
+    [[nodiscard]] int  chReverb(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].reverb.value : 0; }
     // noteOnトリガーカウンター（UI activity検出用、advance()毎にインクリメント）
     // chNoteOn()はワンショット楽器で一瞬falseになるため、カウンターで検出する
     [[nodiscard]] uint32_t chNoteOnCount(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOnCount : 0; }
@@ -410,11 +420,11 @@ public:
             int off  = fmOffset(fi);
             m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panToReg(st.pan)));
         } else if (isSSG(ch)) {
-            m_engine->writeReg(0, 0x07, m_ssgMixer);
-            if (st.ssgSoftEnv) {
-                st.ssgEnvValue = st.ssgEnvAL;
-                st.ssgEnvPhase = 1;
-                st.ssgEnvKeyOnTick = true;
+            m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
+            if (st.ssgEnv.softEnv) {
+                st.ssgEnv.value = st.ssgEnv.al;
+                st.ssgEnv.phase = 1;
+                st.ssgEnv.keyOnTick = true;
             }
         }
     }
@@ -533,8 +543,8 @@ public:
                     int off  = fmOffset(fi);
                     m_seEngine->writeReg(port, 0xB4 + off, 0xC0);
                 }
-                m_seEngine->writeReg(0, 0x07, 0x3F);
-                m_seEngine->writeReg(0, 0x27, 0x3A);
+                m_seEngine->writeReg(0, REG_SSG_MIXER, 0x3F);
+                m_seEngine->writeReg(0, REG_TIMER_CTRL, 0x3A);
                 // BGMチップと同じSSGミックスバランスを適用
                 if (m_engine)
                     m_seEngine->setSsgMixScale(m_engine->getSsgMixScale());
@@ -816,50 +826,15 @@ public:
     {
         if (!m_playing || !m_engine) return;
 
-        // OpenMUCOM88 完全互換 Timer-B タイミング
-        //
-        // fmgenの内部クロック計算:
-        //   baseclock = 7987200 Hz (PC-8801 YM2608)
-        //   fmgen SetRate() で clock /= 2 → 3993600
-        //   fmclock = 3993600 / 6 / 12 = 55466.67
-        //   timer_stepd = 1000.0 / fmclock * 16.0 = 0.28837... ms
-        //
-        // Timer-Bカウンタ:
-        //   timerb = (int)((256 - T) * timer_stepd * 1024.0)
-        //
-        // OpenMUCOM88のCMucom::RenderAudio:
-        //   16サンプルごとに AudioLeftMs += 16 * (1000.0 / sampleRate)
-        //   整数ミリ秒分を UpdateTime(ms << 10) に渡す
-        //   Timer-Bカウンタから (ms << 10) を減算、0以下でtick発生
-
         // フェード処理（サンプル単位で進行、テンポ非依存）
-        if (m_fading) {
-            if (frameCount >= m_fadeSamplesLeft) {
-                m_fadeSamplesLeft = 0;
-                m_fadeAtt = m_fadeTargetAtt;
-                m_fading = false;
-            } else {
-                m_fadeSamplesLeft -= frameCount;
-                float t = 1.0f - static_cast<float>(m_fadeSamplesLeft) / m_fadeTotalSamples;
-                m_fadeAtt = m_fadeStartAtt + static_cast<int>((m_fadeTargetAtt - m_fadeStartAtt) * t);
-            }
-            recalcGlobalAtt();
-        }
-        // フェードアウト完了時の自動アクション実行
-        // stop()がm_fadingをfalseにするため、FadeAction判定はstop()呼び出し前に行う
-        if (!m_fading && m_fadeTargetAtt == 127 && m_fadeAction != FadeAction::None) {
-            FadeAction action = m_fadeAction;
-            m_fadeAction = FadeAction::None;
-            executeFadeAction(action);
-            return; // stop()済みのため、以降のTimer-B処理をスキップ
-        }
+        if (advanceFade(frameCount)) return;
 
         // 16サンプル単位で処理（OpenMUCOM88と同じ粒度）
         m_globalSampleAccum += frameCount;
 
         while (m_globalSampleAccum >= 16) {
             m_globalSampleAccum -= 16;
-            m_audioLeftMs += 16.0 * 1000.0 / m_sampleRate;
+            m_audioLeftMs += m_msPerSample16;
 
             int ms = static_cast<int>(m_audioLeftMs);
             if (ms <= 0) continue;
@@ -877,15 +852,12 @@ public:
                 if (m_loop && m_commonEndTick > 0) {
                     if (m_perChannelLoop) {
                         // per-channel独立ループ（Issue #62）
-                        // 初回globalLoopRestart後、各チャンネルは独立周期でループ。
-                        // perChTickBase は perChannelRestart() 内で更新される
                         for (int ch2 = 0; ch2 < MAX_MML_CHANNELS; ch2++) {
                             auto& st2 = m_channels[ch2];
-                            if (st2.events.empty() || !st2.hasLoopPoint) continue;
-                            if (m_globalTick >= st2.nextRestartTick) {
+                            if (st2.events.empty() || !st2.loop.hasPoint) continue;
+                            if (m_globalTick >= st2.loop.nextRestartTick) {
                                 perChannelRestart(ch2);
-                                st2.nextRestartTick += st2.perChLoopLen;
-                                // リスタート直後のイベントを即座に処理
+                                st2.loop.nextRestartTick += st2.loop.loopLen;
                                 processEvents(ch2, m_globalTick);
                             }
                         }
@@ -894,7 +866,6 @@ public:
                         uint32_t chTick = m_globalTick - m_loopTickOffset;
                         if (chTick >= m_commonEndTick) {
                             globalLoopRestart();
-                            // ループ後のイベントを即座に処理
                             for (int ch2 = 0; ch2 < MAX_MML_CHANNELS; ch2++) {
                                 if (m_channels[ch2].events.empty()) continue;
                                 processEvents(ch2, m_globalTick);
@@ -904,13 +875,11 @@ public:
                 }
 
                 // Z80 PLSET2: 毎tick Timer制御レジスタ書き込み（INT3ハンドラ先頭）
-                // 通常モード: 0x3A、CSMエフェクトモード: 0x7A
-                // Timer-Bオーバーフローフラグリセット + Timer制御の安定化
                 if (m_engine) {
                     bool anyCsm = false;
                     for (int ch2 = 0; ch2 < MAX_MML_CHANNELS; ch2++)
-                        if (m_channels[ch2].csmEnabled) { anyCsm = true; break; }
-                    m_engine->writeReg(0, 0x27, anyCsm ? 0x7A : 0x3A);
+                        if (m_channels[ch2].csm.enabled) { anyCsm = true; break; }
+                    m_engine->writeReg(0, REG_TIMER_CTRL, anyCsm ? 0x7A : 0x3A);
                 }
 
                 // 全チャンネルを同じtickで同期処理（INT3割り込み相当）
@@ -919,38 +888,25 @@ public:
                     if (st.events.empty()) continue;
                     if (st.eventIdx >= st.events.size()) {
                         // Issue #68: Z80互換 — イベント消費済みチャンネルの即時リスタート
-                        // Z80ドライバーは各チャンネルが独立にend marker到達→DATA TOPへジャンプ。
-                        // MaxCountパディングは存在しない。globalLoopRestartを待たずに即時リスタート。
-                        if (m_loop && st.hasLoopPoint && !m_perChannelLoop) {
+                        if (m_loop && st.loop.hasPoint && !m_perChannelLoop) {
                             // per-channelモードに移行（初回リスタート時）
-                            // 全チャンネルのperChLoopLen/nextRestartTickを初期化
                             m_perChannelLoop = true;
                             for (int c = 0; c < MAX_MML_CHANNELS; c++) {
                                 auto& sc = m_channels[c];
-                                if (sc.events.empty() || !sc.hasLoopPoint) continue;
-                                sc.perChLoopLen = sc.perChEndTick - sc.loopTick;
-                                if (sc.perChLoopLen == 0) sc.perChLoopLen = 1;
-                                // perChTickBase=0（初回パス: chTick = globalTick）
-                                sc.perChTickBase = 0;
-                                // nextRestartTickは自チャンネルのendTick
-                                // （イベント消費済みチャンネルも含む — Issue #71）
-                                sc.nextRestartTick = sc.perChEndTick;
+                                if (sc.events.empty() || !sc.loop.hasPoint) continue;
+                                sc.loop.loopLen = sc.loop.endTick - sc.loop.tick;
+                                if (sc.loop.loopLen == 0) sc.loop.loopLen = 1;
+                                sc.loop.tickBase = 0;
+                                sc.loop.nextRestartTick = sc.loop.endTick;
                             }
                             // イベント消費済みの全チャンネルを即座にリスタート（Issue #71）
-                            // Z80では各チャンネルが独立にend marker到達→DATA TOPジャンプ。
-                            // 移行発動チャンネル(ch)だけでなく、同じtickで消費済みの他チャンネルも
-                            // 即座にリスタートする。perChTickBaseはperChEndTick基準で計算し、
-                            // イベント消費の検出が1tick遅れる問題を補正する。
                             for (int c = 0; c < MAX_MML_CHANNELS; c++) {
                                 auto& sc = m_channels[c];
-                                if (sc.events.empty() || !sc.hasLoopPoint) continue;
+                                if (sc.events.empty() || !sc.loop.hasPoint) continue;
                                 if (sc.eventIdx >= sc.events.size()) {
                                     perChannelRestart(c);
-                                    // perChTickBase補正: perChannelRestart()は m_globalTick - loopTick を
-                                    // 設定するが、イベント消費の検出が1tick遅れるため、実際のend tickを
-                                    // 基準にした値に上書きする（Issue #71）
-                                    sc.perChTickBase = sc.perChEndTick - sc.loopTick;
-                                    sc.nextRestartTick = sc.perChEndTick + sc.perChLoopLen;
+                                    sc.loop.tickBase = sc.loop.endTick - sc.loop.tick;
+                                    sc.loop.nextRestartTick = sc.loop.endTick + sc.loop.loopLen;
                                     processEvents(c, m_globalTick);
                                 }
                             }
@@ -963,100 +919,21 @@ public:
                             advanceEventsSilent(ch, m_globalTick);
                         } else {
                             processEvents(ch, m_globalTick);
-                            if (st.noteOn && st.lfoEnabled && st.lfoDepth != 0)
+                            if (st.noteOn && st.lfo.enabled && st.lfo.depth != 0)
                                 tickLfo(ch);
-                            if (st.portaActive)
+                            if (st.porta.active)
                                 tickPortamento(ch);
                         }
                     }
                 }
 
-                // MUCOM88互換: SSGソフトウェアエンベロープ
-                // 発音中: 音量を毎tick再書き込み（SOFENV互換）
-                // リリース中: 音量を減衰させる（MUCOM88 SSSUBA互換）
-                for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-                    if (!isSSG(ch)) continue;
-                    if (m_channels[ch].hijacked) continue;
-                    auto& cst = m_channels[ch];
-                    int si = toSSGIndex(ch);
-
-                    if (cst.ssgSoftEnv) {
-                        // ── MUCOM88 SOFENV互換 ADSRステートマシン ──
-                        // Z80 SSSUB0: BIT 7,(IX+6) → エンベロープ有効フラグのみチェック
-                        // Z80はnoteOnやphaseに関係なく、フラグが立っていれば毎tick書き込み。
-                        // RELEASE完了後もenvValue=0のまま毎tick音量0を書き込み続ける。
-                        // Z80互換: KEY_ON tickではSOFENV進行をスキップ（SOFEV7のみ）
-                        // Z80 SSSUBG: envValue=AL → CALL SOFEV7（音量計算のみ）
-                        // Z80 SSSUB0: CALL SOFENV（エンベロープ進行+音量計算）← 次tick以降
-                        if (cst.ssgEnvKeyOnTick) {
-                            cst.ssgEnvKeyOnTick = false;
-                        } else {
-                            ssgTickEnvelope(ch);
-                        }
-                        int vol = std::clamp(cst.volume - m_globalAtt / 4, 0, 15);
-                        int amp = ((vol + 1) * cst.ssgEnvValue) >> 8;
-                        // SOFEV7リバーブ（Z80 music.asm:2336-2342）:
-                        // BIT 6,(IX+31): SSGではTIEフラグ（SET=発音中, RES=KEY_OFF後）
-                        // RET NZ: TIEフラグSET(発音中)→リバーブ適用しない
-                        // BIT 5,(IX+33): リバーブON→適用
-                        // → KEY_OFF後(noteOn=false)かつリバーブONならamp = (amp+rv)>>1
-                        if (cst.reverbEnabled && !cst.noteOn) {
-                            amp = (amp + cst.reverbValue) >> 1;
-                        }
-                        if (amp > 15) amp = 15;
-                        if (amp < 0) amp = 0;
-                        m_engine->writeReg(0, 0x08 + si, static_cast<uint8_t>(amp));
-                    } else if (cst.ssgReleasing) {
-                        // Eコマンド未使用の簡易リリース
-                        cst.ssgRelVol -= 2;
-                        if (cst.ssgRelVol <= 0) {
-                            cst.ssgRelVol = 0;
-                            cst.ssgReleasing = false;
-                        }
-                        m_engine->writeReg(0, 0x08 + si, static_cast<uint8_t>(cst.ssgRelVol & 0x0F));
-                    }
-                }
-
-                // MUCOM88互換: FMリバーブ毎tick TL書き込み（Z80 FS2互換）
-                // Z80 FMSUB0: wait<q かつ リバーブON → FS2
-                // FS2: C = ((IX+6) + (IX+17)) >> 1 → STV2（TOTALV加算なし）
-                // IX+6は変更されない→毎tick同じ値を書く（定数、IIR減衰ではない）
-                // Z80互換: チャンネルデータ終了後はFMSUB0が呼ばれないため停止
-                for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-                    if (!isFM(ch)) continue;
-                    if (m_channels[ch].hijacked) continue;
-                    auto& cst = m_channels[ch];
-                    if (!cst.reverbActive) continue;
-                    // チャンネル終了後は停止（Z80: データ終了後FMSUB0不呼び出し）
-                    if (cst.eventIdx >= cst.events.size()) {
-                        cst.reverbActive = false;
-                        continue;
-                    }
-                    // Z80 FS2: C = (IX+6 + IX+17) >> 1 → STV2(FMVDAT[C])
-                    // IX+6(volume)は不変→毎tick同じTL値を書く（定数、IIR減衰ではない）
-                    fmSetReverbVolume(toFMIndex(ch), cst.volume, cst.reverbValue);
-                }
-
-                // テンポ変更 → Timer-B再計算
+                advanceSsgEnvelopes();
+                advanceFmReverb();
                 recalcTimerB();
             }
         }
 
-        // 全チャンネル終端 → 停止
-        // - m_loop=false: 常に停止
-        // - m_loop=true + commonEndTick>0: ループリスタートが処理するため停止しない
-        // - m_loop=true + commonEndTick==0: L無し曲 → ループ不可、残留音防止のため停止
-        if (!m_loop || m_commonEndTick == 0) {
-            bool allDone = true;
-            for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-                if (m_channels[ch].events.empty()) continue;
-                if (m_channels[ch].eventIdx < m_channels[ch].events.size()) {
-                    allDone = false;
-                    break;
-                }
-            }
-            if (allDone) stop();
-        }
+        if (checkEndOfSong()) stop();
     }
 
     // ── 混合レンダリング（BGM + SE）──────────────────────
@@ -1132,143 +1009,20 @@ public:
             }
 
             // eventIdxをループポイントに設定
-            if (st.hasLoopPoint) {
-                st.eventIdx = st.loopEventIdx;
+            if (st.loop.hasPoint) {
+                st.eventIdx = st.loop.eventIdx;
             } else {
                 // Lコマンドがないチャンネル: ループせず沈黙を維持
                 // Z80プレイヤーではLなしトラックはループ時に再生されない
                 st.eventIdx = st.events.size();
             }
             // per-channelループオフセットをリセット（globalLoop時に全チャンネル同期）
-            st.perChLoopOffset = 0;
+            st.loop.loopOffset = 0;
 
-            // ランタイム状態リセット（全可変状態をデフォルト値に復元）
+            // ランタイム状態リセット + イベント走査による状態復元
             // Issue #19: ループ2周目以降のSSGピッチずれ修正
-            st.currentNote  = 0;
-            st.noteOnCount  = 0;  // UI activityカウンタもリセット
-            st.reverbActive = false;
-            st.portaActive  = false;
-            st.csmEnabled   = false;
-            st.csmDetune[0] = st.csmDetune[1] = st.csmDetune[2] = st.csmDetune[3] = 0;
-            // ピッチ関連
-            st.detune       = 0;
-            st.lfoPitchOffset = 0;
-            st.lfoDelayCounter = 0;
-            st.lfoStepCounter  = 0;
-            st.lfoRateCounter  = 0;
-            st.lfoDirection    = 1;
-            st.lfoEnabled   = false;
-            st.lfoDelay     = 0;
-            st.lfoRate      = 1;
-            st.lfoDepth     = 0;
-            st.lfoCount     = 0;
-            // 音量・パン・スタッカート
-            st.volume       = 12;
-            st.pan          = 3;
-            st.staccato     = 0;
-            // SSGエンベロープ
-            st.ssgSoftEnv   = false;
-            st.ssgEnvMode   = false;
-            st.ssgEnvAL = st.ssgEnvAR = st.ssgEnvDR = 0;
-            st.ssgEnvSL = st.ssgEnvSR = st.ssgEnvRR = 0;
-            st.ssgEnvPhase  = 0;
-            st.ssgEnvValue  = 0;
-            st.ssgEnvKeyOnTick = false;
-            st.ssgReleasing = false;
-            st.ssgRelVol    = 0;
-            // リバーブ
-            st.reverbValue    = 0;
-            st.reverbEnabled  = false;
-            st.reverbQCutOnly = false;
-
-            // ループ再開位置までのイベントを走査して状態復元
-            for (size_t i = 0; i < st.eventIdx; i++) {
-                const auto& ev = st.events[i];
-                switch (ev.type) {
-                case MmlEventType::TEMPO:    m_globalTempo = ev.value; break;
-                case MmlEventType::VOLUME:   st.volume = ev.value; break;
-                case MmlEventType::PATCH:
-                    if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
-                    if (isSSG(ch)) ssgApplyPreset(toSSGIndex(ch), ev.value);
-                    break;
-                case MmlEventType::PAN:       st.pan = ev.value; break;
-                case MmlEventType::STACCATO:  st.staccato = ev.value; break;
-                case MmlEventType::DETUNE:    st.detune = ev.value; break;
-                case MmlEventType::VIBRATO:
-                    st.lfoEnabled = true;
-                    st.lfoDelay = ev.vibDelay; st.lfoRate = ev.vibRate;
-                    st.lfoDepth = ev.vibDepth; st.lfoCount = ev.vibCount;
-                    break;
-                case MmlEventType::VIBRATO_SWITCH:
-                    st.lfoEnabled = (ev.value != 0);
-                    break;
-                case MmlEventType::LFO_PARAM:
-                    switch (ev.vibDelay) {
-                        case 0: st.lfoDelay = ev.value; break;
-                        case 1: st.lfoRate  = std::max(ev.value, 1); break;
-                        case 2: st.lfoDepth = ev.value; break;
-                        case 3: st.lfoCount = std::max(ev.value, 1); break;
-                    }
-                    break;
-                case MmlEventType::REG_WRITE: {
-                    int addr = ev.note;
-                    int data = ev.value;
-                    // SSGミキサー仮想アドレス（0xF0-0xF2）の復元
-                    if (addr >= 0xF0 && addr <= 0xF2) {
-                        int si = addr - 0xF0;
-                        bool toneOn  = (data & 1) != 0;
-                        bool noiseOn = (data & 2) != 0;
-                        if (toneOn)  m_ssgMixer &= ~(1 << si);
-                        else         m_ssgMixer |=  (1 << si);
-                        if (noiseOn) m_ssgMixer &= ~(1 << (si+3));
-                        else         m_ssgMixer |=  (1 << (si+3));
-                    }
-                    break;
-                }
-                case MmlEventType::PORTAMENTO: {
-                    // ポルタメント状態の復元（processEvents側と同一ロジック）
-                    int startNote = ev.note;
-                    int endNote   = ev.value;
-                    int dur       = static_cast<int>(ev.duration);
-                    if (dur <= 0) dur = 1;
-                    int sb = 0, eb = 0;
-                    uint16_t sf = noteToFnum(startNote, sb);
-                    uint16_t ef = noteToFnum(endNote, eb);
-                    int startBF = (sb << 11) | sf;
-                    int endBF   = (eb << 11) | ef;
-                    st.portaActive      = true;
-                    st.portaStartFnum   = startBF;
-                    st.portaEndFnum     = endBF;
-                    st.portaCurrentFnum = startBF;
-                    st.portaTicksLeft   = dur;
-                    st.portaStep        = (endBF - startBF) / dur;
-                    break;
-                }
-                case MmlEventType::HARDWARE_LFO:
-                    // HW LFO設定はレジスタ書き込みのみ（復元はplay後の再生で行われる）
-                    // ここではst側の状態変更がないのでbreak
-                    break;
-                case MmlEventType::CSM_MODE:
-                    st.csmDetune[0] = ev.vibDelay; st.csmDetune[1] = ev.vibRate;
-                    st.csmDetune[2] = ev.vibDepth; st.csmDetune[3] = ev.vibCount;
-                    st.csmEnabled = !(st.csmDetune[0] == 0 && st.csmDetune[1] == 0 &&
-                                      st.csmDetune[2] == 0 && st.csmDetune[3] == 0);
-                    break;
-                case MmlEventType::REVERB_ENVELOPE:
-                    st.reverbValue = ev.value; st.reverbEnabled = true; break;
-                case MmlEventType::REVERB_SWITCH:
-                    st.reverbEnabled = (ev.value != 0); break;
-                case MmlEventType::REVERB_MODE:
-                    st.reverbQCutOnly = (ev.value != 0); break;
-                case MmlEventType::SSG_ENVELOPE:
-                    st.ssgSoftEnv = true;
-                    st.ssgEnvAL = ev.envAL; st.ssgEnvAR = ev.envAR;
-                    st.ssgEnvDR = ev.envDR; st.ssgEnvSL = ev.envSL;
-                    st.ssgEnvSR = ev.envSR; st.ssgEnvRR = ev.envRR;
-                    break;
-                default: break;
-                }
-            }
+            resetChannelRuntime(ch);
+            replayEventsForStateRestore(ch, /*restoreTempo=*/true);
         }
 
         // Timer-B再計算 + 音色/PAN/音量復元（ハイジャック中チャンネルはスキップ）
@@ -1292,7 +1046,7 @@ public:
                     static_cast<uint8_t>(panToReg(m_channels[ch].pan)));
             }
         }
-        m_engine->writeReg(0, 0x07, m_ssgMixer);
+        m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
         // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
         if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
             adpcmbSetVolume(m_channels[10].volume);
@@ -1304,12 +1058,12 @@ public:
         m_perChannelLoop = true;
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             auto& st = m_channels[ch];
-            if (st.events.empty() || !st.hasLoopPoint) continue;
-            st.perChLoopLen = m_commonEndTick - st.loopTick;
-            if (st.perChLoopLen == 0) st.perChLoopLen = 1;
+            if (st.events.empty() || !st.loop.hasPoint) continue;
+            st.loop.loopLen = m_commonEndTick - st.loop.tick;
+            if (st.loop.loopLen == 0) st.loop.loopLen = 1;
             // perChTickBase: tick - perChTickBase で chTick(=loopTick起点) を算出
-            st.perChTickBase = m_globalTick - st.loopTick;
-            st.nextRestartTick = m_globalTick + st.perChLoopLen;
+            st.loop.tickBase = m_globalTick - st.loop.tick;
+            st.loop.nextRestartTick = m_globalTick + st.loop.loopLen;
         }
     }
 
@@ -1327,41 +1081,10 @@ public:
         }
 
         // eventIdx巻き戻し
-        st.eventIdx = st.loopEventIdx;
+        st.eventIdx = st.loop.eventIdx;
 
-        // ランタイム状態リセット（globalLoopRestartと同一）
-        st.currentNote  = 0;
-        st.noteOnCount  = 0;
-        st.reverbActive = false;
-        st.portaActive  = false;
-        st.csmEnabled   = false;
-        st.csmDetune[0] = st.csmDetune[1] = st.csmDetune[2] = st.csmDetune[3] = 0;
-        st.detune       = 0;
-        st.lfoPitchOffset = 0;
-        st.lfoDelayCounter = 0;
-        st.lfoStepCounter  = 0;
-        st.lfoRateCounter  = 0;
-        st.lfoDirection    = 1;
-        st.lfoEnabled   = false;
-        st.lfoDelay     = 0;
-        st.lfoRate      = 1;
-        st.lfoDepth     = 0;
-        st.lfoCount     = 0;
-        st.volume       = 12;
-        st.pan          = 3;
-        st.staccato     = 0;
-        st.ssgSoftEnv   = false;
-        st.ssgEnvMode   = false;
-        st.ssgEnvAL = st.ssgEnvAR = st.ssgEnvDR = 0;
-        st.ssgEnvSL = st.ssgEnvSR = st.ssgEnvRR = 0;
-        st.ssgEnvPhase  = 0;
-        st.ssgEnvValue  = 0;
-        st.ssgEnvKeyOnTick = false;
-        st.ssgReleasing = false;
-        st.ssgRelVol    = 0;
-        st.reverbValue    = 0;
-        st.reverbEnabled  = false;
-        st.reverbQCutOnly = false;
+        // ランタイム状態リセット + イベント走査による状態復元
+        resetChannelRuntime(ch);
 
         // SSGミキサーリセット（このチャンネルがSSGの場合）
         if (isSSG(ch)) {
@@ -1370,86 +1093,7 @@ public:
             m_ssgMixer |= (1 << (si + 3)); // ノイズ無効
         }
 
-        // ループ再開位置までのイベントを走査して状態復元
-        for (size_t i = 0; i < st.eventIdx; i++) {
-            const auto& ev = st.events[i];
-            switch (ev.type) {
-            case MmlEventType::VOLUME:   st.volume = ev.value; break;
-            case MmlEventType::PATCH:
-                if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
-                if (isSSG(ch)) ssgApplyPreset(toSSGIndex(ch), ev.value);
-                break;
-            case MmlEventType::PAN:       st.pan = ev.value; break;
-            case MmlEventType::STACCATO:  st.staccato = ev.value; break;
-            case MmlEventType::DETUNE:    st.detune = ev.value; break;
-            case MmlEventType::VIBRATO:
-                st.lfoEnabled = true;
-                st.lfoDelay = ev.vibDelay; st.lfoRate = ev.vibRate;
-                st.lfoDepth = ev.vibDepth; st.lfoCount = ev.vibCount;
-                break;
-            case MmlEventType::VIBRATO_SWITCH:
-                st.lfoEnabled = (ev.value != 0); break;
-            case MmlEventType::LFO_PARAM:
-                switch (ev.vibDelay) {
-                    case 0: st.lfoDelay = ev.value; break;
-                    case 1: st.lfoRate  = std::max(ev.value, 1); break;
-                    case 2: st.lfoDepth = ev.value; break;
-                    case 3: st.lfoCount = std::max(ev.value, 1); break;
-                }
-                break;
-            case MmlEventType::REG_WRITE: {
-                int addr = ev.note;
-                int data = ev.value;
-                if (addr >= 0xF0 && addr <= 0xF2) {
-                    int si = addr - 0xF0;
-                    bool toneOn  = (data & 1) != 0;
-                    bool noiseOn = (data & 2) != 0;
-                    if (toneOn)  m_ssgMixer &= ~(1 << si);
-                    else         m_ssgMixer |=  (1 << si);
-                    if (noiseOn) m_ssgMixer &= ~(1 << (si+3));
-                    else         m_ssgMixer |=  (1 << (si+3));
-                }
-                break;
-            }
-            case MmlEventType::PORTAMENTO: {
-                int startNote = ev.note;
-                int endNote   = ev.value;
-                int dur       = static_cast<int>(ev.duration);
-                if (dur <= 0) dur = 1;
-                int sb = 0, eb = 0;
-                uint16_t sf = noteToFnum(startNote, sb);
-                uint16_t ef = noteToFnum(endNote, eb);
-                int startBF = (sb << 11) | sf;
-                int endBF   = (eb << 11) | ef;
-                st.portaActive      = true;
-                st.portaStartFnum   = startBF;
-                st.portaEndFnum     = endBF;
-                st.portaCurrentFnum = startBF;
-                st.portaTicksLeft   = dur;
-                st.portaStep        = (endBF - startBF) / dur;
-                break;
-            }
-            case MmlEventType::CSM_MODE:
-                st.csmDetune[0] = ev.vibDelay; st.csmDetune[1] = ev.vibRate;
-                st.csmDetune[2] = ev.vibDepth; st.csmDetune[3] = ev.vibCount;
-                st.csmEnabled = !(st.csmDetune[0] == 0 && st.csmDetune[1] == 0 &&
-                                  st.csmDetune[2] == 0 && st.csmDetune[3] == 0);
-                break;
-            case MmlEventType::REVERB_ENVELOPE:
-                st.reverbValue = ev.value; st.reverbEnabled = true; break;
-            case MmlEventType::REVERB_SWITCH:
-                st.reverbEnabled = (ev.value != 0); break;
-            case MmlEventType::REVERB_MODE:
-                st.reverbQCutOnly = (ev.value != 0); break;
-            case MmlEventType::SSG_ENVELOPE:
-                st.ssgSoftEnv = true;
-                st.ssgEnvAL = ev.envAL; st.ssgEnvAR = ev.envAR;
-                st.ssgEnvDR = ev.envDR; st.ssgEnvSL = ev.envSL;
-                st.ssgEnvSR = ev.envSR; st.ssgEnvRR = ev.envRR;
-                break;
-            default: break;
-            }
-        }
+        replayEventsForStateRestore(ch, /*restoreTempo=*/false);
 
         // 音色/PAN/音量復元（ハイジャック中はスキップ）
         if (!st.hijacked) {
@@ -1463,7 +1107,7 @@ public:
                     static_cast<uint8_t>(panToReg(st.pan)));
             }
             if (isSSG(ch)) {
-                m_engine->writeReg(0, 0x07, m_ssgMixer);
+                m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
             }
             if (isADPCMB(ch)) {
                 if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
@@ -1473,10 +1117,85 @@ public:
         }
 
         // per-channel tick base更新
-        st.perChTickBase = m_globalTick - st.loopTick;
+        st.loop.tickBase = m_globalTick - st.loop.tick;
     }
 
 private:
+    // YM2608 レジスタアドレス定数
+    static constexpr uint8_t REG_SSG_NOISE      = 0x06;
+    static constexpr uint8_t REG_SSG_MIXER      = 0x07;
+    static constexpr uint8_t REG_SSG_AMP_A      = 0x08;
+    static constexpr uint8_t REG_RHYTHM_KEY     = 0x10;
+    static constexpr uint8_t REG_RHYTHM_TL      = 0x11;
+    static constexpr uint8_t REG_LFO_CTRL       = 0x22;
+    static constexpr uint8_t REG_TIMER_CTRL     = 0x27;
+    static constexpr uint8_t REG_KEY_ON_OFF     = 0x28;
+    static constexpr uint8_t REG_FM6CH_MODE     = 0x29;
+    static constexpr uint8_t REG_PRESCALER      = 0x2D;
+
+    // ── チャンネル状態サブ構造体 ─────────────────────────
+    struct LfoState {
+        bool enabled       = false;   // MF1=true, MF0=false
+        int  delay         = 0;       // 遅延（クロック数）
+        int  rate          = 1;       // クロック単位（何クロックごとに1ステップ）
+        int  depth         = 0;       // 1ステップあたりのF-Number変化量
+        int  count         = 0;       // 反転までのステップ数
+        int  delayCounter  = 0;       // 遅延カウントダウン
+        int  stepCounter   = 0;       // 現在のステップ位置（0〜count）
+        int  rateCounter   = 0;       // レートカウンタ（0〜rate）
+        int  direction     = 1;       // 現在の進行方向（+1 or -1）
+        int  pitchOffset   = 0;       // 現在のピッチオフセット（F-Number単位）
+    };
+
+    struct SsgEnvState {
+        bool softEnv    = false; // Eコマンドで有効化
+        int  al         = 0;     // n1: Attack Level (初期値)
+        int  ar         = 0;     // n2: Attack Rate
+        int  dr         = 0;     // n3: Decay Rate
+        int  sl         = 0;     // n4: Sustain Level (Decay目標値)
+        int  sr         = 0;     // n5: Sustain Rate (毎tick減分, 0=保持)
+        int  rr         = 0;     // n6: Release Rate
+        int  phase      = 0;     // ADSR状態: 0=OFF, 1=ATTACK, 2=DECAY, 3=SUSTAIN, 4=RELEASE
+        int  value      = 0;     // 現在のエンベロープ値（0-255）
+        bool keyOnTick  = false; // Z80互換: KEY_ON tickではSOFENV進行をスキップ
+        bool releasing  = false; // リリース中フラグ（Eコマンド未使用時の簡易版）
+        int  relVol     = 0;     // リリース中の現在音量（簡易版）
+        bool mode       = false; // SSGハードウェアエンベロープ（@N）
+    };
+
+    struct ReverbState {
+        int  value      = 0;     // リバーブ音量加減値（IX+17）
+        bool enabled    = false; // リバーブON/OFF（IX+33 bit5）
+        bool qCutOnly   = false; // リバーブモード: true=qカット部分のみ（IX+33 bit4）
+        bool active     = false; // KEY_OFF済み=リバーブ減衰中
+        int  currentVol = 0;     // リバーブ減衰中の現在ボリューム（Z80 TOTALV互換）
+    };
+
+    struct PortaState {
+        bool active      = false;   // ポルタメント中
+        int  startFnum   = 0;       // 開始F-Number（block込み: block<<11 | fnum）
+        int  endFnum     = 0;       // 終了F-Number
+        int  ticksLeft   = 0;       // 残りtick数
+        int  step        = 0;       // 毎tickのF-Number増分（符号あり）
+        int  currentFnum = 0;       // 現在のF-Number
+    };
+
+    struct PerChLoopState {
+        size_t   eventIdx      = 0;   // ループ再開時のイベントインデックス
+        uint32_t tick           = 0;   // ループ再開時のtick
+        bool     hasPoint      = false;
+        uint32_t endTick       = 0;   // チャンネル固有の終端tick
+        uint32_t loopOffset    = 0;   // per-channelループの累積tickオフセット
+        uint32_t loopLen       = 0;   // チャンネル固有のループ周期
+        uint32_t tickBase      = 0;   // chTick計算用ベース
+        uint32_t nextRestartTick = 0; // 次のper-channelリスタートの絶対tick
+    };
+
+    struct CsmState {
+        bool enabled         = false;
+        int  detune[4]       = {0, 0, 0, 0};  // OP1-OP4 デチューンオフセット
+    };
+
     struct ChannelState {
         std::vector<MmlEvent> events;
         size_t   eventIdx    = 0;
@@ -1485,66 +1204,16 @@ private:
         int      currentNote = 0;
         int      staccato    = 0;
         int      volume      = 12;
-        int      pan         = 3;   // パン（0=off, 1=right, 2=left, 3=center）
-        bool     ssgEnvMode  = false; // SSGハードウェアエンベロープ（@N）
-        // SSGソフトウェアエンベロープ（Eコマンド、MUCOM88 SOFENV互換）
-        bool     ssgSoftEnv   = false; // Eコマンドで有効化
-        int      ssgEnvAL     = 0;     // n1: Attack Level (初期値)
-        int      ssgEnvAR     = 0;     // n2: Attack Rate
-        int      ssgEnvDR     = 0;     // n3: Decay Rate
-        int      ssgEnvSL     = 0;     // n4: Sustain Level (Decay目標値)
-        int      ssgEnvSR     = 0;     // n5: Sustain Rate (毎tick減分, 0=保持)
-        int      ssgEnvRR     = 0;     // n6: Release Rate
-        // ADSR状態: 0=OFF, 1=ATTACK, 2=DECAY, 3=SUSTAIN, 4=RELEASE
-        int      ssgEnvPhase  = 0;
-        int      ssgEnvValue  = 0;     // 現在のエンベロープ値（0-255）
-        bool     ssgEnvKeyOnTick = false; // Z80互換: KEY_ON tickではSOFENV進行をスキップ
-        bool     ssgReleasing = false; // リリース中フラグ（Eコマンド未使用時の簡易版）
-        int      ssgRelVol    = 0;     // リリース中の現在音量（簡易版）
-        // デチューン: F-Numberオフセット（D コマンド）
-        int      detune      = 0;
-        // ソフトウェアLFO（M コマンド）
-        bool     lfoEnabled  = false;   // MF1=true, MF0=false
-        int      lfoDelay    = 0;       // 遅延（クロック数）
-        int      lfoRate     = 1;       // クロック単位（何クロックごとに1ステップ）
-        int      lfoDepth    = 0;       // 1ステップあたりのF-Number変化量
-        int      lfoCount    = 0;       // 反転までのステップ数
-        // LFO ランタイム状態
-        int      lfoDelayCounter = 0;   // 遅延カウントダウン
-        int      lfoStepCounter  = 0;   // 現在のステップ位置（0〜lfoCount）
-        int      lfoRateCounter  = 0;   // レートカウンタ（0〜lfoRate）
-        int      lfoDirection    = 1;   // 現在の進行方向（+1 or -1）
-        int      lfoPitchOffset  = 0;   // 現在のピッチオフセット（F-Number単位）
-        // ポルタメント（{}コマンド、MUCOM88 CULPTM互換）
-        bool     portaActive    = false;   // ポルタメント中
-        int      portaStartFnum = 0;       // 開始F-Number（block込み: block<<11 | fnum）
-        int      portaEndFnum   = 0;       // 終了F-Number
-        int      portaTicksLeft = 0;       // 残りtick数
-        int      portaStep      = 0;       // 毎tickのF-Number増分（符号あり）
-        int      portaCurrentFnum = 0;     // 現在のF-Number
-        // リバーブ（Rコマンド、MUCOM88 REVERVE/REVSW/REVMOD互換）
-        int      reverbValue    = 0;     // リバーブ音量加減値（IX+17）
-        bool     reverbEnabled  = false; // リバーブON/OFF（IX+33 bit5）
-        bool     reverbQCutOnly = false; // リバーブモード: true=qカット部分のみ（IX+33 bit4）
-        bool     reverbActive   = false; // KEY_OFF済み=リバーブ減衰中
-        int      reverbCurrentVol = 0;   // リバーブ減衰中の現在ボリューム（Z80 TOTALV互換、毎tick更新）
-        // ループポイント（Lコマンド）
-        size_t   loopEventIdx   = 0;   // ループ再開時のイベントインデックス
-        uint32_t loopTick       = 0;   // ループ再開時のtick
-        bool     hasLoopPoint   = false;
-        // per-channelループ（Z80互換: 各チャンネルが独立してLポイントに戻る）
-        uint32_t perChEndTick      = 0;  // チャンネル固有の終端tick
-        uint32_t perChLoopOffset   = 0;  // per-channelループの累積tickオフセット
-        // per-channel独立ループ（Issue #62: 初回globalLoopRestart後に有効化）
-        uint32_t perChLoopLen      = 0;  // チャンネル固有のループ周期 (commonEndTick - loopTick)
-        uint32_t perChTickBase     = 0;  // chTick計算用ベース (tick - perChTickBase = chTick - loopTick)
-        uint32_t nextRestartTick   = 0;  // 次のper-channelリスタートの絶対tick
-        // CSMモード（Sコマンド、FM ch3 エフェクトモード）
-        // Z80 MDSET→TO_EFC/EXMODE: 毎tickで4オペレータ独立F-Number + 4回KEY ON
-        bool     csmEnabled     = false;
-        int      csmDetune[4]   = {0, 0, 0, 0};  // OP1-OP4 デチューンオフセット
-        // チャンネルハイジャック（SE割り込み用）
-        bool     hijacked       = false;
+        int      pan         = 3;     // パン（0=off, 1=right, 2=left, 3=center）
+        int      detune      = 0;     // デチューン: F-Numberオフセット（D コマンド）
+        bool     hijacked    = false; // チャンネルハイジャック（SE割り込み用）
+        const FmPatch* cachedPatch = nullptr; // パッチポインタキャッシュ
+        LfoState      lfo;
+        SsgEnvState   ssgEnv;
+        ReverbState   reverb;
+        PortaState    porta;
+        PerChLoopState loop;
+        CsmState      csm;
     };
 
     // ── SEスロット状態 ─────────────────────────────────
@@ -1578,6 +1247,7 @@ private:
     int         m_globalTempo       = 120;  // Timer-B値（BPMではない）
     // OpenMUCOM88完全互換 Timer-Bカウンタ（int: fmgenのtruncation挙動を再現）
     double      m_audioLeftMs       = 0.0;
+    double      m_msPerSample16     = 16.0 * 1000.0 / 44100.0; // 事前計算: 16サンプル分のミリ秒
     int         m_timerBCount       = 0;
     int         m_timerBPeriod      = 0;  // (256-T) * timer_stepd * 1024 (int truncation)
     int         m_wholeTick         = 128;  // Cコマンド（デフォルトC128）
@@ -1650,6 +1320,147 @@ private:
     static int fmMmlCh(int fi) { return (fi < 3) ? fi : (fi - 3 + 7); }
 
     // =====================================================================
+    // イベントハンドラー（processEvents()から抽出）
+    // =====================================================================
+
+    // ── NOTE_ONイベント処理 ──────────────────────────────
+    void handleNoteOn(int ch, ChannelState& st, const MmlEvent& ev)
+    {
+        // Z80 FMSUB5→FMSUB4 タイ判定（music.asm line 529-557）:
+        // FMチャンネルでは、NOTE_ON時に必ずKEY_OFF→KEY_ONを行う。
+        // SSGはTIEフラグON時にキーオフせず周波数だけ変更（SSSUB6互換）。
+        if (st.noteOn && isSSG(ch)) {
+            // SSG: key-offせず周波数と音量を更新するだけ
+            doKeyOn(ch, ev.note, ev.velocity);
+        } else {
+            // Z80 FMSUB5: BIT 6,(IX+31) / CALL NZ,KEYOFF
+            if (st.reverb.active && isFM(ch)) {
+                doKeyOff(ch);
+            } else if (st.noteOn) {
+                doKeyOff(ch);
+            }
+            // Z80: FMSUB5→FMSUB4→FMSUB7→KEYON
+            if (ch == 2 && st.csm.enabled) {
+                csmKeyOn(ch, ev.note, ev.velocity);
+            } else {
+                doKeyOn(ch, ev.note, ev.velocity);
+            }
+            // KEYON後: リバーブON時のみ STVOL（music.asm line 745-746）
+            if (isFM(ch) && st.reverb.enabled) {
+                doSetVolume(ch, st.volume);
+            }
+        }
+        st.noteOn       = true;
+        st.noteOnCount++;
+        st.currentNote  = ev.note;
+        st.ssgEnv.releasing = false;
+        st.reverb.active = false;
+        // SSGソフトウェアエンベロープ: ATTACK開始
+        if (isSSG(ch) && st.ssgEnv.softEnv) {
+            st.ssgEnv.value = st.ssgEnv.al;
+            st.ssgEnv.phase = 1;  // ATTACK
+            st.ssgEnv.keyOnTick = true;  // このtickではSOFENV進行スキップ
+        }
+    }
+
+    // ── NOTE_OFFイベント処理 ─────────────────────────────
+    void handleNoteOff(int ch, ChannelState& st, const MmlEvent& ev)
+    {
+        if (!(st.noteOn && st.currentNote == ev.note)) return;
+        // SSG: 同tick KEY_OFF→KEY_ON でクリックノイズ防止のためスキップ
+        bool skipKeyOff = false;
+        if (isSSG(ch) && st.eventIdx + 1 < st.events.size()) {
+            const auto& next = st.events[st.eventIdx + 1];
+            if (next.tick == ev.tick && next.type == MmlEventType::NOTE_ON)
+                skipKeyOff = true;
+        }
+        if (skipKeyOff) return;
+        if (isFM(ch) && st.reverb.enabled) {
+            // FM リバーブ: KEY_OFFの代わりにFS2で音量設定
+            fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverb.value);
+            st.reverb.active = true;
+        } else if (isSSG(ch) && st.ssgEnv.softEnv) {
+            st.ssgEnv.phase = 4;  // RELEASE
+            st.noteOn = false;
+        } else if (isSSG(ch)) {
+            st.ssgEnv.releasing = true;
+            st.ssgEnv.relVol = std::clamp(st.volume - m_globalAtt / 4, 0, 15);
+            st.noteOn = false;
+        } else {
+            doKeyOff(ch);
+            st.noteOn = false;
+        }
+    }
+
+    // ── REG_WRITEイベント処理 ────────────────────────────
+    void handleRegWrite(int /*ch*/, ChannelState& /*st*/, const MmlEvent& ev)
+    {
+        int addr = ev.note;
+        int data = ev.value;
+        // SSGミキサー仮想アドレス（0xF0-0xF2）: PコマンドのSSGミキサー制御
+        if (addr >= 0xF0 && addr <= 0xF2) {
+            int si = addr - 0xF0;
+            bool toneOn  = (data & 1) != 0;
+            bool noiseOn = (data & 2) != 0;
+            if (toneOn)  m_ssgMixer &= ~(1 << si);
+            else         m_ssgMixer |=  (1 << si);
+            if (noiseOn) m_ssgMixer &= ~(1 << (si+3));
+            else         m_ssgMixer |=  (1 << (si+3));
+            m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
+            return;
+        }
+        // 通常のレジスタ書き込み（yコマンド）
+        int port = (addr >= 0x100) ? 1 : 0;
+        m_engine->writeReg(port, static_cast<uint8_t>(addr & 0xFF), static_cast<uint8_t>(data & 0xFF));
+        // リズム楽器 IL レジスタ（0x18-0x1D）への書き込みを追跡
+        if (addr >= 0x18 && addr <= 0x1D) {
+            m_rhythmIL[addr - 0x18] = static_cast<uint8_t>(data & 0xFF);
+        }
+    }
+
+    // ── PORTAMENTOイベント処理 ───────────────────────────
+    void handlePortamento(int /*ch*/, ChannelState& st, const MmlEvent& ev)
+    {
+        // Z80 CULPTM→PLLFO→PLSKI2: F-Number(block込み14bit)への毎tick加算
+        int startNote = ev.note;
+        int endNote   = ev.value;
+        int dur       = static_cast<int>(ev.duration);
+        if (dur <= 0) dur = 1;
+        int sb = 0, eb = 0;
+        uint16_t sf = noteToFnum(startNote, sb);
+        uint16_t ef = noteToFnum(endNote, eb);
+        int startBF = (sb << 11) | sf;
+        int endBF   = (eb << 11) | ef;
+        st.porta.active      = true;
+        st.porta.startFnum   = startBF;
+        st.porta.endFnum     = endBF;
+        st.porta.currentFnum = startBF;
+        st.porta.ticksLeft   = dur;
+        st.porta.step        = (endBF - startBF) / dur;
+    }
+
+    // ── CSM_MODEイベント処理 ─────────────────────────────
+    void handleCsmMode(int /*ch*/, ChannelState& st, const MmlEvent& ev)
+    {
+        // FM ch3 CSMモード（Z80 MDSET→TO_EFC/EXMODE）
+        st.csm.detune[0] = ev.vibDelay;  // OP1
+        st.csm.detune[1] = ev.vibRate;   // OP2
+        st.csm.detune[2] = ev.vibDepth;  // OP3
+        st.csm.detune[3] = ev.vibCount;  // OP4
+        bool allZero = (st.csm.detune[0] == 0 && st.csm.detune[1] == 0 &&
+                        st.csm.detune[2] == 0 && st.csm.detune[3] == 0);
+        if (allZero) {
+            st.csm.enabled = false;
+            if (m_engine)
+                m_engine->writeReg(0, REG_TIMER_CTRL, 0x3A);
+        } else {
+            st.csm.enabled = true;
+            if (m_engine)
+                m_engine->writeReg(0, REG_TIMER_CTRL, 0x7A);
+        }
+    }
+
+    // =====================================================================
     // イベント処理（チャンネル種別で分岐）
     // =====================================================================
     void processEvents(int ch, uint32_t tick)
@@ -1659,8 +1470,8 @@ private:
         // チャンネルtick計算: per-channelループモード時はチャンネル固有のtick baseを使用
         // per-channel: chTick = tick - perChTickBase で、loopTick起点にマッピング
         // global: chTick = tick - m_loopTickOffset
-        uint32_t chTick = (m_perChannelLoop && st.hasLoopPoint)
-                        ? (tick - st.perChTickBase)
+        uint32_t chTick = (m_perChannelLoop && st.loop.hasPoint)
+                        ? (tick - st.loop.tickBase)
                         : (tick - m_loopTickOffset);
         while (st.eventIdx < st.events.size()) {
             const MmlEvent& ev = st.events[st.eventIdx];
@@ -1673,8 +1484,8 @@ private:
                 // 全チャンネルがKEY_OFFされるため、ここで明示的に消音する。
                 if (st.noteOn) {
                     if (isSSG(ch)) {
-                        if (st.ssgSoftEnv) {
-                            st.ssgEnvPhase = 4;  // RELEASE
+                        if (st.ssgEnv.softEnv) {
+                            st.ssgEnv.phase = 4;  // RELEASE
                         } else {
                             ssgKeyOff(toSSGIndex(ch));
                         }
@@ -1691,121 +1502,33 @@ private:
 
             switch (ev.type) {
             case MmlEventType::NOTE_ON:
-                // Z80 FMSUB5→FMSUB4 タイ判定（music.asm line 529-557）:
-                // FMSUB1は毎回SET 6,(IX+31)でKEYOFF_FLAG=1を設定する。
-                // KEYOFF_FLAG=1の場合:
-                //   FMSUB5: CALL NZ,KEYOFF → KEY_OFF実行（常に）
-                //   FMSUB4: JR NZ,FMSUB9 → KEY_ON実行（常に）
-                // KEYOFF_FLAG=0は0xFDカウントオーバー後のみ（通常到達しない）。
-                //
-                // したがってFMチャンネルでは、NOTE_ON時に必ずKEY_OFF→KEY_ONを行う。
-                // SSGはTIEフラグON時にキーオフせず周波数だけ変更（SSSUB6互換）。
-                if (st.noteOn && isSSG(ch)) {
-                    // SSG: key-offせず周波数と音量を更新するだけ
-                    // Z80 SSSUB6: TIEフラグON時はキーオフせずに周波数だけ変更
-                    doKeyOn(ch, ev.note, ev.velocity);
-                } else {
-                    // Z80 FMSUB5: BIT 6,(IX+31) / CALL NZ,KEYOFF
-                    if (st.reverbActive && isFM(ch)) {
-                        doKeyOff(ch);
-                    } else if (st.noteOn) {
-                        doKeyOff(ch);
-                    }
-                    // Z80: FMSUB5→FMSUB4→FMSUB7→KEYON
-                    // KEYON後: リバーブON時のみ STVOL（music.asm line 745-746）
-                    if (ch == 2 && st.csmEnabled) {
-                        // CSMモード: EXMODE互換 — 4オペレータ独立F-Number + 4回KEY ON
-                        csmKeyOn(ch, ev.note, ev.velocity);
-                    } else {
-                        doKeyOn(ch, ev.note, ev.velocity);
-                    }
-                    if (isFM(ch) && st.reverbEnabled) {
-                        doSetVolume(ch, st.volume);
-                    }
-                }
-                st.noteOn       = true;
-                st.noteOnCount++;
-                st.currentNote  = ev.note;
-                st.ssgReleasing = false;
-                st.reverbActive = false;
-                // SSGソフトウェアエンベロープ: ATTACK開始
-                // Z80互換: SSSUBG→SOFEV7（音量計算のみ、エンベロープ進行なし）
-                // KEY_ON tickではSOFENV進行をスキップし、SOFEV7相当の計算のみ行う
-                if (isSSG(ch) && st.ssgSoftEnv) {
-                    st.ssgEnvValue = st.ssgEnvAL;
-                    st.ssgEnvPhase = 1;  // ATTACK
-                    st.ssgEnvKeyOnTick = true;  // このtickではSOFENV進行スキップ
-                }
+                handleNoteOn(ch, st, ev);
                 break;
             case MmlEventType::NOTE_OFF:
-                if (st.noteOn && st.currentNote == ev.note) {
-                    // Z80 FMSUB: wait==0でFMSUB1に直行（q=0でもFMSUB0はスキップ）
-                    // FMSUB1→FMSUB5で KEY_OFF が実行されるため、
-                    // 同tickの NOTE_OFF→NOTE_ON では NOTE_OFF 側の KEY_OFF は冗長。
-                    // SSG: 同tick KEY_OFF→KEY_ON でクリックノイズ防止のためスキップ。
-                    bool skipKeyOff = false;
-                    if (isSSG(ch) && st.eventIdx + 1 < st.events.size()) {
-                        const auto& next = st.events[st.eventIdx + 1];
-                        if (next.tick == ev.tick && next.type == MmlEventType::NOTE_ON)
-                            skipKeyOff = true;
-                    }
-                    if (!skipKeyOff) {
-                        if (isFM(ch) && st.reverbEnabled) {
-                            // FM リバーブ: KEY_OFFの代わりにFS2で音量設定
-                            // Z80 FS2: C = (IX+6 + IX+17) >> 1 → STV2（TOTALV加算なし）
-                            // IX+6は変更されない→毎tick同じ値を書く（定数）
-                            fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverbValue);
-                            st.reverbActive = true;
-                            // Z80互換: KEYOFFフラグ(IX+31 bit6)セットのみ
-                            // noteOnは変更しない（LFO/ピッチ更新を継続するため）
-                            // 実際のKEY_OFFはFMSUB5で次のノート開始時に行われる
-                        } else if (isSSG(ch) && st.ssgSoftEnv) {
-                            // SSGソフトウェアエンベロープ: RELEASE開始
-                            st.ssgEnvPhase = 4;  // RELEASE
-                            st.noteOn = false;
-                        } else if (isSSG(ch)) {
-                            // Eコマンド未使用時の簡易版リリース
-                            st.ssgReleasing = true;
-                            st.ssgRelVol = std::clamp(st.volume - m_globalAtt / 4, 0, 15);
-                            st.noteOn = false;
-                        } else {
-                            doKeyOff(ch);
-                            st.noteOn = false;
-                        }
-                    }
-                }
+                handleNoteOff(ch, st, ev);
                 break;
             case MmlEventType::TIE_KEYOFF:
                 // Z80 FMSUB3互換: ^タイ境界でのKEY_OFF/FS2処理
-                // Rm1(reverbQCutOnly): FS3→実KEY_OFF（エンベロープRELEASE開始）
-                // Rm0(reverb有効, !Rm1): FS2→リバーブ音量設定（KEY_OFFなし）
                 if (st.noteOn && isFM(ch)) {
-                    if (st.reverbQCutOnly) {
-                        // Z80 FMSUB3: BIT 4,(IX+33)=1 → FS3 → CALL KEYOFF
+                    if (st.reverb.qCutOnly) {
                         doKeyOff(ch);
-                        st.reverbActive = true;
-                        // noteOnは維持（Z80もKEY_OFF後にLFO/ピッチ更新は継続）
+                        st.reverb.active = true;
                     } else {
-                        // Z80 FMSUB3: BIT 5,(IX+33)=1 → FS2 → リバーブ音量
-                        fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverbValue);
-                        st.reverbActive = true;
+                        fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverb.value);
+                        st.reverb.active = true;
                     }
                 }
                 break;
             case MmlEventType::TEMPO:
-                m_globalTempo = ev.value;  // テンポは全チャンネル共有
+                m_globalTempo = ev.value;
                 break;
             case MmlEventType::VOLUME:
                 if (isADPCMB(ch) && ev.note == 1) {
-                    // PVMODE=1: v値をIX+7(追加音量)に格納。IX+6(baseVol)は変更しない
                     m_pcmVolMode = 1;
                     m_pcmAddVol = ev.value;
-                    adpcmbSetVolume(st.volume);  // baseVol+addVolで再計算
+                    adpcmbSetVolume(st.volume);
                 } else {
-                    if (isADPCMB(ch) && ev.note == 0) {
-                        // PVMODE=0: v値をIX+6(baseVol)に格納。IX+7は変更しない
-                        m_pcmVolMode = 0;
-                    }
+                    if (isADPCMB(ch) && ev.note == 0) m_pcmVolMode = 0;
                     st.volume = ev.value;
                     doSetVolume(ch, ev.value);
                 }
@@ -1818,33 +1541,28 @@ private:
                 break;
             case MmlEventType::DETUNE:
                 st.detune = ev.value;
-                // 発音中ならピッチを即時更新
                 if (st.noteOn) updatePitch(ch);
                 break;
             case MmlEventType::VIBRATO:
-                st.lfoDelay = ev.vibDelay;
-                st.lfoRate  = std::max(ev.vibRate, 1);
-                st.lfoDepth = ev.vibDepth;
-                st.lfoCount = std::max(ev.vibCount, 1);
-                st.lfoEnabled = true;
-                // LFO設定変更時にランタイム状態はリセットしない
-                // （ノートオン時にリセットされる）
+                st.lfo.delay = ev.vibDelay;
+                st.lfo.rate  = std::max(ev.vibRate, 1);
+                st.lfo.depth = ev.vibDepth;
+                st.lfo.count = std::max(ev.vibCount, 1);
+                st.lfo.enabled = true;
                 break;
             case MmlEventType::VIBRATO_SWITCH:
-                st.lfoEnabled = (ev.value != 0);
-                if (!st.lfoEnabled) {
-                    // LFO OFF: ピッチオフセットをクリアし即時反映
-                    st.lfoPitchOffset = 0;
+                st.lfo.enabled = (ev.value != 0);
+                if (!st.lfo.enabled) {
+                    st.lfo.pitchOffset = 0;
                     if (st.noteOn) updatePitch(ch);
                 }
                 break;
             case MmlEventType::LFO_PARAM:
-                // MW/MC/ML/MD: LFO個別パラメータ変更
                 switch (ev.vibDelay) {
-                    case 0: st.lfoDelay = ev.value; break;              // MW
-                    case 1: st.lfoRate  = std::max(ev.value, 1); break; // MC
-                    case 2: st.lfoDepth = ev.value; break;              // ML
-                    case 3: st.lfoCount = std::max(ev.value, 1); break; // MD
+                    case 0: st.lfo.delay = ev.value; break;
+                    case 1: st.lfo.rate  = std::max(ev.value, 1); break;
+                    case 2: st.lfo.depth = ev.value; break;
+                    case 3: st.lfo.count = std::max(ev.value, 1); break;
                 }
                 break;
             case MmlEventType::PAN:
@@ -1852,107 +1570,54 @@ private:
                 doSetPan(ch, ev.value);
                 break;
             case MmlEventType::REST:
-                if (st.noteOn || st.reverbActive) {
-                    // Rm0(reverbQCutOnly=false): 休符でもリバーブ適用
-                    // Rm1(reverbQCutOnly=true): 休符ではリバーブ適用しない→通常KEY_OFF
-                    if (isFM(ch) && st.reverbEnabled && !st.reverbQCutOnly && st.noteOn) {
-                        // Z80 FMSUB3: 休符時にリバーブON → FS2
-                        fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverbValue);
-                        st.reverbActive = true;
-                        // noteOnは維持（LFO継続）
+                if (st.noteOn || st.reverb.active) {
+                    if (isFM(ch) && st.reverb.enabled && !st.reverb.qCutOnly && st.noteOn) {
+                        fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverb.value);
+                        st.reverb.active = true;
                     } else {
                         doKeyOff(ch);
                         st.noteOn = false;
-                        st.reverbActive = false;
+                        st.reverb.active = false;
                     }
                 }
                 break;
-            case MmlEventType::REG_WRITE: {
-                int addr = ev.note;
-                int data = ev.value;
-                // SSGミキサー仮想アドレス（0xF0-0xF2）: PコマンドのSSGミキサー制御
-                if (addr >= 0xF0 && addr <= 0xF2) {
-                    int si = addr - 0xF0;
-                    // P0=無音(tone off,noise off), P1=トーン, P2=ノイズ, P3=トーン+ノイズ
-                    // レジスタ0x07: bit0-2=tone(active low), bit3-5=noise(active low)
-                    bool toneOn  = (data & 1) != 0;  // P1 or P3
-                    bool noiseOn = (data & 2) != 0;  // P2 or P3
-                    if (toneOn)  m_ssgMixer &= ~(1 << si);      // tone enable (active low)
-                    else         m_ssgMixer |=  (1 << si);       // tone disable
-                    if (noiseOn) m_ssgMixer &= ~(1 << (si+3));  // noise enable
-                    else         m_ssgMixer |=  (1 << (si+3));   // noise disable
-                    m_engine->writeReg(0, 0x07, m_ssgMixer);
-                    break;
-                }
-                // 通常のレジスタ書き込み（yコマンド）
-                int port = (addr >= 0x100) ? 1 : 0;
-                m_engine->writeReg(port, static_cast<uint8_t>(addr & 0xFF), static_cast<uint8_t>(data & 0xFF));
-                // リズム楽器 IL レジスタ（0x18-0x1D）への書き込みを追跡
-                if (addr >= 0x18 && addr <= 0x1D) {
-                    m_rhythmIL[addr - 0x18] = static_cast<uint8_t>(data & 0xFF);
-                }
+            case MmlEventType::REG_WRITE:
+                handleRegWrite(ch, st, ev);
                 break;
-            }
             case MmlEventType::KEY_TRANSPOSE:
-                // パーサー側でノート番号に適用済み。エンジンでは無処理。
                 break;
             case MmlEventType::SSG_ENVELOPE:
-                // SSGソフトウェアエンベロープ設定（Eコマンド）
-                st.ssgSoftEnv = true;
-                st.ssgEnvAL = ev.envAL;
-                st.ssgEnvAR = ev.envAR;
-                st.ssgEnvDR = ev.envDR;
-                st.ssgEnvSR = ev.envSR;
-                st.ssgEnvSL = ev.envSL;
-                st.ssgEnvRR = ev.envRR;
+                st.ssgEnv.softEnv = true;
+                st.ssgEnv.al = ev.envAL;
+                st.ssgEnv.ar = ev.envAR;
+                st.ssgEnv.dr = ev.envDR;
+                st.ssgEnv.sr = ev.envSR;
+                st.ssgEnv.sl = ev.envSL;
+                st.ssgEnv.rr = ev.envRR;
                 break;
-            case MmlEventType::PORTAMENTO: {
-                // ポルタメント: 次のNOTE_ONで発音される音のピッチスライドを設定
-                // Z80 CULPTM→PLLFO→PLSKI2: F-Number(block込み14bit)への毎tick加算
-                int startNote = ev.note;
-                int endNote   = ev.value;
-                int dur       = static_cast<int>(ev.duration);
-                if (dur <= 0) dur = 1;
-                // F-Number 14bit = (block << 11) | fnum
-                int sb = 0, eb = 0;
-                uint16_t sf = noteToFnum(startNote, sb);
-                uint16_t ef = noteToFnum(endNote, eb);
-                int startBF = (sb << 11) | sf;
-                int endBF   = (eb << 11) | ef;
-                st.portaActive      = true;
-                st.portaStartFnum   = startBF;
-                st.portaEndFnum     = endBF;
-                st.portaCurrentFnum = startBF;
-                st.portaTicksLeft   = dur;
-                st.portaStep        = (endBF - startBF) / dur;
+            case MmlEventType::PORTAMENTO:
+                handlePortamento(ch, st, ev);
                 break;
-            }
             case MmlEventType::REVERB_ENVELOPE:
-                st.reverbValue = ev.value;
-                st.reverbEnabled = true;  // R値設定時に自動ON（Z80: REVERVE→SET 5,(IX+33)）
+                st.reverb.value = ev.value;
+                st.reverb.enabled = true;
                 break;
             case MmlEventType::REVERB_SWITCH:
-                st.reverbEnabled = (ev.value != 0);
-                if (!st.reverbEnabled) {
-                    // RF0: リバーブOFF→音量即時反映（Z80: REVSW→CALL STVOL）
-                    st.reverbActive = false;
+                st.reverb.enabled = (ev.value != 0);
+                if (!st.reverb.enabled) {
+                    st.reverb.active = false;
                     doSetVolume(ch, st.volume);
                 }
                 break;
             case MmlEventType::REVERB_MODE:
-                st.reverbQCutOnly = (ev.value != 0);
+                st.reverb.qCutOnly = (ev.value != 0);
                 break;
-            case MmlEventType::HARDWARE_LFO: {
-                // ハードウェアLFO（Z80 HLFOON, music.asm:1033）
-                // 0x22: LFO周波数(bit0-2) + ON(bit3)
-                // 0xB4+ch: PAN(bit6-7) | AMS(bit4-5) | PMS(bit0-2)
+            case MmlEventType::HARDWARE_LFO:
                 if (isFM(ch)) {
                     int freq = ev.vibDelay & 0x07;
                     int pms  = ev.vibRate & 0x07;
                     int ams  = ev.vibDepth & 0x03;
-                    // レジスタ0x22: LFO ON + 周波数
-                    m_engine->writeReg(0, 0x22, static_cast<uint8_t>(freq | 0x08));
-                    // レジスタ0xB4+ch: PANビット保持 + AMS/PMS
+                    m_engine->writeReg(0, REG_LFO_CTRL, static_cast<uint8_t>(freq | 0x08));
                     int fi   = toFMIndex(ch);
                     int port = fmPort(fi);
                     int off  = fmOffset(fi);
@@ -1961,35 +1626,14 @@ private:
                         static_cast<uint8_t>(panBits | ((ams & 0x03) << 4) | (pms & 0x07)));
                 }
                 break;
-            }
-            case MmlEventType::CSM_MODE: {
-                // FM ch3 CSMモード（Z80 MDSET→TO_EFC/EXMODE）
-                // S n1,n2,n3,n4: OP1-OP4のデチューンオフセット設定
-                // S0,0,0,0: 通常モード復帰（TO_NML）
-                st.csmDetune[0] = ev.vibDelay;  // OP1
-                st.csmDetune[1] = ev.vibRate;   // OP2
-                st.csmDetune[2] = ev.vibDepth;  // OP3
-                st.csmDetune[3] = ev.vibCount;  // OP4
-                bool allZero = (st.csmDetune[0] == 0 && st.csmDetune[1] == 0 &&
-                                st.csmDetune[2] == 0 && st.csmDetune[3] == 0);
-                if (allZero) {
-                    // TO_NML: 通常モード復帰（reg 0x27 = 0x3A）
-                    st.csmEnabled = false;
-                    if (m_engine)
-                        m_engine->writeReg(0, 0x27, 0x3A);
-                } else {
-                    // TO_EFC: エフェクトモード有効化（reg 0x27 = 0x7A）
-                    st.csmEnabled = true;
-                    if (m_engine)
-                        m_engine->writeReg(0, 0x27, 0x7A);
-                }
+            case MmlEventType::CSM_MODE:
+                handleCsmMode(ch, st, ev);
                 break;
-            }
             case MmlEventType::LOOP_POINT:
                 // ループ再開位置を記録（次のイベントから再開）
-                st.hasLoopPoint = true;
-                st.loopEventIdx = st.eventIdx + 1;
-                st.loopTick     = ev.tick;
+                st.loop.hasPoint = true;
+                st.loop.eventIdx = st.eventIdx + 1;
+                st.loop.tick     = ev.tick;
                 break;
             case MmlEventType::END:
                 st.eventIdx = st.events.size();
@@ -2015,8 +1659,8 @@ private:
     void advanceEventsSilent(int ch, uint32_t tick)
     {
         auto& st = m_channels[ch];
-        uint32_t chTick = (m_perChannelLoop && st.hasLoopPoint)
-                        ? (tick - st.perChTickBase)
+        uint32_t chTick = (m_perChannelLoop && st.loop.hasPoint)
+                        ? (tick - st.loop.tickBase)
                         : (tick - m_loopTickOffset);
         while (st.eventIdx < st.events.size()) {
             const MmlEvent& ev = st.events[st.eventIdx];
@@ -2035,10 +1679,10 @@ private:
                     int idx = ev.value & 0x0F;
                     if (idx < 16) {
                         const auto& preset = kSsgPresets[idx];
-                        st.ssgSoftEnv = true;
-                        st.ssgEnvAL = preset.env[0]; st.ssgEnvAR = preset.env[1];
-                        st.ssgEnvDR = preset.env[2]; st.ssgEnvSL = preset.env[3];
-                        st.ssgEnvSR = preset.env[4]; st.ssgEnvRR = preset.env[5];
+                        st.ssgEnv.softEnv = true;
+                        st.ssgEnv.al = preset.env[0]; st.ssgEnv.ar = preset.env[1];
+                        st.ssgEnv.dr = preset.env[2]; st.ssgEnv.sl = preset.env[3];
+                        st.ssgEnv.sr = preset.env[4]; st.ssgEnv.rr = preset.env[5];
                     }
                 }
                 break;
@@ -2049,26 +1693,26 @@ private:
             case MmlEventType::NOTE_OFF:  st.noteOn = false; break;
             case MmlEventType::REST:      st.noteOn = false; break;
             case MmlEventType::VIBRATO:
-                st.lfoEnabled = true;
-                st.lfoDelay = ev.vibDelay; st.lfoRate = ev.vibRate;
-                st.lfoDepth = ev.vibDepth; st.lfoCount = ev.vibCount;
+                st.lfo.enabled = true;
+                st.lfo.delay = ev.vibDelay; st.lfo.rate = ev.vibRate;
+                st.lfo.depth = ev.vibDepth; st.lfo.count = ev.vibCount;
                 break;
             case MmlEventType::VIBRATO_SWITCH:
-                st.lfoEnabled = (ev.value != 0); break;
+                st.lfo.enabled = (ev.value != 0); break;
             case MmlEventType::REVERB_ENVELOPE:
-                st.reverbValue = ev.value; st.reverbEnabled = true; break;
+                st.reverb.value = ev.value; st.reverb.enabled = true; break;
             case MmlEventType::REVERB_SWITCH:
-                st.reverbEnabled = (ev.value != 0); break;
+                st.reverb.enabled = (ev.value != 0); break;
             case MmlEventType::SSG_ENVELOPE:
-                st.ssgSoftEnv = true;
-                st.ssgEnvAL = ev.envAL; st.ssgEnvAR = ev.envAR;
-                st.ssgEnvDR = ev.envDR; st.ssgEnvSL = ev.envSL;
-                st.ssgEnvSR = ev.envSR; st.ssgEnvRR = ev.envRR;
+                st.ssgEnv.softEnv = true;
+                st.ssgEnv.al = ev.envAL; st.ssgEnv.ar = ev.envAR;
+                st.ssgEnv.dr = ev.envDR; st.ssgEnv.sl = ev.envSL;
+                st.ssgEnv.sr = ev.envSR; st.ssgEnv.rr = ev.envRR;
                 break;
             case MmlEventType::LOOP_POINT:
-                st.hasLoopPoint = true;
-                st.loopEventIdx = st.eventIdx + 1;
-                st.loopTick = ev.tick;
+                st.loop.hasPoint = true;
+                st.loop.eventIdx = st.eventIdx + 1;
+                st.loop.tick = ev.tick;
                 break;
             case MmlEventType::END:
                 st.eventIdx = st.events.size();
@@ -2088,11 +1732,11 @@ private:
         // Z80 LFORST+LFORST2: delay counter = delay, peak counter = peak/2(SRL A),
         // waveform position = initial depth, rate counter = rate
         auto& st = m_channels[ch];
-        st.lfoDelayCounter = st.lfoDelay;
-        st.lfoStepCounter  = st.lfoCount / 2;  // Z80 SETPEK: SRL A → peak/2
-        st.lfoRateCounter  = 0;
-        st.lfoDirection    = 1;
-        st.lfoPitchOffset  = 0;
+        st.lfo.delayCounter = st.lfo.delay;
+        st.lfo.stepCounter  = st.lfo.count / 2;  // Z80 SETPEK: SRL A → peak/2
+        st.lfo.rateCounter  = 0;
+        st.lfo.direction    = 1;
+        st.lfo.pitchOffset  = 0;
 
         if      (isFM(ch))     fmKeyOn(toFMIndex(ch), noteNum, velocity);
         else if (isSSG(ch))    ssgKeyOn(toSSGIndex(ch), noteNum);
@@ -2189,6 +1833,121 @@ private:
         if (m_timerBPeriod <= 0) m_timerBPeriod = 1;
     }
 
+    // ── advance()サブメソッド: フェード処理 ──────────────────
+    // フェードの進行と完了時の自動アクションを処理する。
+    // 戻り値: true = FadeActionでstop()が呼ばれた（呼び出し元はreturnすべき）
+    bool advanceFade(uint32_t frameCount) noexcept
+    {
+        if (m_fading) {
+            if (frameCount >= m_fadeSamplesLeft) {
+                m_fadeSamplesLeft = 0;
+                m_fadeAtt = m_fadeTargetAtt;
+                m_fading = false;
+            } else {
+                m_fadeSamplesLeft -= frameCount;
+                float t = 1.0f - static_cast<float>(m_fadeSamplesLeft) / m_fadeTotalSamples;
+                m_fadeAtt = m_fadeStartAtt + static_cast<int>((m_fadeTargetAtt - m_fadeStartAtt) * t);
+            }
+            recalcGlobalAtt();
+        }
+        // フェードアウト完了時の自動アクション実行
+        // stop()がm_fadingをfalseにするため、FadeAction判定はstop()呼び出し前に行う
+        if (!m_fading && m_fadeTargetAtt == 127 && m_fadeAction != FadeAction::None) {
+            FadeAction action = m_fadeAction;
+            m_fadeAction = FadeAction::None;
+            executeFadeAction(action);
+            return true; // stop()済み
+        }
+        return false;
+    }
+
+    // ── advance()サブメソッド: SSGソフトウェアエンベロープ tick処理 ──
+    void advanceSsgEnvelopes() noexcept
+    {
+        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
+            if (!isSSG(ch)) continue;
+            if (m_channels[ch].hijacked) continue;
+            auto& cst = m_channels[ch];
+            int si = toSSGIndex(ch);
+
+            if (cst.ssgEnv.softEnv) {
+                // ── MUCOM88 SOFENV互換 ADSRステートマシン ──
+                // Z80 SSSUB0: BIT 7,(IX+6) → エンベロープ有効フラグのみチェック
+                // Z80はnoteOnやphaseに関係なく、フラグが立っていれば毎tick書き込み。
+                // RELEASE完了後もenvValue=0のまま毎tick音量0を書き込み続ける。
+                // Z80互換: KEY_ON tickではSOFENV進行をスキップ（SOFEV7のみ）
+                // Z80 SSSUBG: envValue=AL → CALL SOFEV7（音量計算のみ）
+                // Z80 SSSUB0: CALL SOFENV（エンベロープ進行+音量計算）← 次tick以降
+                if (cst.ssgEnv.keyOnTick) {
+                    cst.ssgEnv.keyOnTick = false;
+                } else {
+                    ssgTickEnvelope(ch);
+                }
+                int vol = std::clamp(cst.volume - m_globalAtt / 4, 0, 15);
+                int amp = ((vol + 1) * cst.ssgEnv.value) >> 8;
+                // SOFEV7リバーブ（Z80 music.asm:2336-2342）:
+                // BIT 6,(IX+31): SSGではTIEフラグ（SET=発音中, RES=KEY_OFF後）
+                // RET NZ: TIEフラグSET(発音中)→リバーブ適用しない
+                // BIT 5,(IX+33): リバーブON→適用
+                // → KEY_OFF後(noteOn=false)かつリバーブONならamp = (amp+rv)>>1
+                if (cst.reverb.enabled && !cst.noteOn) {
+                    amp = (amp + cst.reverb.value) >> 1;
+                }
+                if (amp > 15) amp = 15;
+                if (amp < 0) amp = 0;
+                m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(amp));
+            } else if (cst.ssgEnv.releasing) {
+                // Eコマンド未使用の簡易リリース
+                cst.ssgEnv.relVol -= 2;
+                if (cst.ssgEnv.relVol <= 0) {
+                    cst.ssgEnv.relVol = 0;
+                    cst.ssgEnv.releasing = false;
+                }
+                m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(cst.ssgEnv.relVol & 0x0F));
+            }
+        }
+    }
+
+    // ── advance()サブメソッド: FMリバーブ毎tick TL書き込み ──────
+    void advanceFmReverb() noexcept
+    {
+        // MUCOM88互換: FMリバーブ毎tick TL書き込み（Z80 FS2互換）
+        // Z80 FMSUB0: wait<q かつ リバーブON → FS2
+        // FS2: C = ((IX+6) + (IX+17)) >> 1 → STV2（TOTALV加算なし）
+        // IX+6は変更されない→毎tick同じ値を書く（定数、IIR減衰ではない）
+        // Z80互換: チャンネルデータ終了後はFMSUB0が呼ばれないため停止
+        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
+            if (!isFM(ch)) continue;
+            if (m_channels[ch].hijacked) continue;
+            auto& cst = m_channels[ch];
+            if (!cst.reverb.active) continue;
+            // チャンネル終了後は停止（Z80: データ終了後FMSUB0不呼び出し）
+            if (cst.eventIdx >= cst.events.size()) {
+                cst.reverb.active = false;
+                continue;
+            }
+            // Z80 FS2: C = (IX+6 + IX+17) >> 1 → STV2(FMVDAT[C])
+            // IX+6(volume)は不変→毎tick同じTL値を書く（定数、IIR減衰ではない）
+            fmSetReverbVolume(toFMIndex(ch), cst.volume, cst.reverb.value);
+        }
+    }
+
+    // ── advance()サブメソッド: 全チャンネル終端検出 ────────────
+    // 戻り値: true = 全チャンネルが終端に到達（再生を停止すべき）
+    bool checkEndOfSong() const noexcept
+    {
+        // - m_loop=false: 常にチェック
+        // - m_loop=true + commonEndTick>0: ループリスタートが処理するため停止しない
+        // - m_loop=true + commonEndTick==0: L無し曲 → ループ不可、残留音防止のため停止
+        if (m_loop && m_commonEndTick > 0) return false;
+        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
+            if (m_channels[ch].events.empty()) continue;
+            if (m_channels[ch].eventIdx < m_channels[ch].events.size())
+                return false;
+        }
+        return true;
+    }
+
     // 3成分の合算減衰値を再計算し、全チャンネルのレジスタに即時反映
     void recalcGlobalAtt()
     {
@@ -2204,12 +1963,12 @@ private:
             if (m_channels[ch].hijacked) continue;
             if (m_channels[ch].noteOn) {
                 int vol = std::clamp(m_channels[ch].volume - m_globalAtt / 4, 0, 15);
-                m_engine->writeReg(0, 0x08 + si, static_cast<uint8_t>(vol & 0x0F));
+                m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(vol & 0x0F));
             }
         }
         int rhythmAtt = m_globalAtt * 63 / 127;
         int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
-        m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
+        m_engine->writeReg(0, REG_RHYTHM_TL, static_cast<uint8_t>(adjustedTL & 0x3F));
         // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
         if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
             adpcmbSetVolume(m_channels[10].volume);
@@ -2224,11 +1983,11 @@ private:
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) fmKeyOff(fi);
         // SSG 全振幅0 + ミキサー無効化
         m_ssgMixer = 0x3F;
-        m_engine->writeReg(0, 0x07, m_ssgMixer);
+        m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
         for (int i = 0; i < MAX_SSG_CHANNELS; i++)
-            m_engine->writeReg(0, 0x08 + i, 0x00);
+            m_engine->writeReg(0, REG_SSG_AMP_A + i, 0x00);
         // リズム全停止（Dump bit=1）
-        m_engine->writeReg(0, 0x10, 0x80 | 0x3F);
+        m_engine->writeReg(0, REG_RHYTHM_KEY, 0x80 | 0x3F);
         // ADPCM-B: ボイス再生中はスキップ（ボイスはplayVoice()で独立管理）
         if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
             adpcmbKeyOff();
@@ -2254,14 +2013,148 @@ private:
                         int off  = fmOffset(fi);
                         m_seEngine->writeReg(port, 0xB4 + off, 0xC0);
                     }
-                    m_seEngine->writeReg(0, 0x07, 0x3F);
-                    m_seEngine->writeReg(0, 0x27, 0x3A);
+                    m_seEngine->writeReg(0, REG_SSG_MIXER, 0x3F);
+                    m_seEngine->writeReg(0, REG_TIMER_CTRL, 0x3A);
                     if (m_engine)
                         m_seEngine->setSsgMixScale(m_engine->getSsgMixScale());
                 }
             }
         }
         m_fadeOutDone = true;
+    }
+
+    // =====================================================================
+    // ループリスタート共通ヘルパー
+    // =====================================================================
+
+    // チャンネルのランタイム状態をデフォルト値にリセット（ループ巻き戻し用）
+    void resetChannelRuntime(int ch)
+    {
+        auto& st = m_channels[ch];
+        st.currentNote  = 0;
+        st.noteOnCount  = 0;
+        st.reverb.active = false;
+        st.porta.active  = false;
+        st.csm.enabled   = false;
+        st.csm.detune[0] = st.csm.detune[1] = st.csm.detune[2] = st.csm.detune[3] = 0;
+        st.detune       = 0;
+        st.lfo.pitchOffset = 0;
+        st.lfo.delayCounter = 0;
+        st.lfo.stepCounter  = 0;
+        st.lfo.rateCounter  = 0;
+        st.lfo.direction    = 1;
+        st.lfo.enabled   = false;
+        st.lfo.delay     = 0;
+        st.lfo.rate      = 1;
+        st.lfo.depth     = 0;
+        st.lfo.count     = 0;
+        st.volume       = 12;
+        st.pan          = 3;
+        st.staccato     = 0;
+        st.ssgEnv.softEnv   = false;
+        st.ssgEnv.mode   = false;
+        st.ssgEnv.al = st.ssgEnv.ar = st.ssgEnv.dr = 0;
+        st.ssgEnv.sl = st.ssgEnv.sr = st.ssgEnv.rr = 0;
+        st.ssgEnv.phase  = 0;
+        st.ssgEnv.value  = 0;
+        st.ssgEnv.keyOnTick = false;
+        st.ssgEnv.releasing = false;
+        st.ssgEnv.relVol    = 0;
+        st.reverb.value    = 0;
+        st.reverb.enabled  = false;
+        st.reverb.qCutOnly = false;
+    }
+
+    // イベント列を走査してチャンネル状態を復元（ループ巻き戻し用）
+    // restoreTempo=true: TEMPOイベントも復元（globalLoopRestart用）
+    void replayEventsForStateRestore(int ch, bool restoreTempo)
+    {
+        auto& st = m_channels[ch];
+        for (size_t i = 0; i < st.eventIdx; i++) {
+            const auto& ev = st.events[i];
+            switch (ev.type) {
+            case MmlEventType::TEMPO:
+                if (restoreTempo) m_globalTempo = ev.value;
+                break;
+            case MmlEventType::VOLUME:   st.volume = ev.value; break;
+            case MmlEventType::PATCH:
+                if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
+                if (isSSG(ch)) ssgApplyPreset(toSSGIndex(ch), ev.value);
+                break;
+            case MmlEventType::PAN:       st.pan = ev.value; break;
+            case MmlEventType::STACCATO:  st.staccato = ev.value; break;
+            case MmlEventType::DETUNE:    st.detune = ev.value; break;
+            case MmlEventType::VIBRATO:
+                st.lfo.enabled = true;
+                st.lfo.delay = ev.vibDelay; st.lfo.rate = ev.vibRate;
+                st.lfo.depth = ev.vibDepth; st.lfo.count = ev.vibCount;
+                break;
+            case MmlEventType::VIBRATO_SWITCH:
+                st.lfo.enabled = (ev.value != 0);
+                break;
+            case MmlEventType::LFO_PARAM:
+                switch (ev.vibDelay) {
+                    case 0: st.lfo.delay = ev.value; break;
+                    case 1: st.lfo.rate  = std::max(ev.value, 1); break;
+                    case 2: st.lfo.depth = ev.value; break;
+                    case 3: st.lfo.count = std::max(ev.value, 1); break;
+                }
+                break;
+            case MmlEventType::REG_WRITE: {
+                int addr = ev.note;
+                int data = ev.value;
+                if (addr >= 0xF0 && addr <= 0xF2) {
+                    int si = addr - 0xF0;
+                    bool toneOn  = (data & 1) != 0;
+                    bool noiseOn = (data & 2) != 0;
+                    if (toneOn)  m_ssgMixer &= ~(1 << si);
+                    else         m_ssgMixer |=  (1 << si);
+                    if (noiseOn) m_ssgMixer &= ~(1 << (si+3));
+                    else         m_ssgMixer |=  (1 << (si+3));
+                }
+                break;
+            }
+            case MmlEventType::PORTAMENTO: {
+                int startNote = ev.note;
+                int endNote   = ev.value;
+                int dur       = static_cast<int>(ev.duration);
+                if (dur <= 0) dur = 1;
+                int sb = 0, eb = 0;
+                uint16_t sf = noteToFnum(startNote, sb);
+                uint16_t ef = noteToFnum(endNote, eb);
+                int startBF = (sb << 11) | sf;
+                int endBF   = (eb << 11) | ef;
+                st.porta.active      = true;
+                st.porta.startFnum   = startBF;
+                st.porta.endFnum     = endBF;
+                st.porta.currentFnum = startBF;
+                st.porta.ticksLeft   = dur;
+                st.porta.step        = (endBF - startBF) / dur;
+                break;
+            }
+            case MmlEventType::HARDWARE_LFO:
+                break;
+            case MmlEventType::CSM_MODE:
+                st.csm.detune[0] = ev.vibDelay; st.csm.detune[1] = ev.vibRate;
+                st.csm.detune[2] = ev.vibDepth; st.csm.detune[3] = ev.vibCount;
+                st.csm.enabled = !(st.csm.detune[0] == 0 && st.csm.detune[1] == 0 &&
+                                  st.csm.detune[2] == 0 && st.csm.detune[3] == 0);
+                break;
+            case MmlEventType::REVERB_ENVELOPE:
+                st.reverb.value = ev.value; st.reverb.enabled = true; break;
+            case MmlEventType::REVERB_SWITCH:
+                st.reverb.enabled = (ev.value != 0); break;
+            case MmlEventType::REVERB_MODE:
+                st.reverb.qCutOnly = (ev.value != 0); break;
+            case MmlEventType::SSG_ENVELOPE:
+                st.ssgEnv.softEnv = true;
+                st.ssgEnv.al = ev.envAL; st.ssgEnv.ar = ev.envAR;
+                st.ssgEnv.dr = ev.envDR; st.ssgEnv.sl = ev.envSL;
+                st.ssgEnv.sr = ev.envSR; st.ssgEnv.rr = ev.envRR;
+                break;
+            default: break;
+            }
+        }
     }
 
     // =====================================================================
@@ -2272,13 +2165,18 @@ private:
 
     void fmApplyPatch(int fi, int patchNo)
     {
+        const FmPatch* patch = nullptr;
         auto it = m_patchMap.find(patchNo);
         if (it != m_patchMap.end() && it->second.valid) {
-            fmWritePatch(fi, it->second);
+            patch = &it->second;
         } else {
             auto def = m_patchMap.find(0);
             if (def != m_patchMap.end() && def->second.valid)
-                fmWritePatch(fi, def->second);
+                patch = &def->second;
+        }
+        if (patch) {
+            m_channels[fmMmlCh(fi)].cachedPatch = patch;
+            fmWritePatch(fi, *patch);
         }
     }
 
@@ -2323,23 +2221,23 @@ private:
     {
         auto& st = m_channels[ch];
         // 遅延カウントダウン
-        if (st.lfoDelayCounter > 0) {
-            st.lfoDelayCounter--;
+        if (st.lfo.delayCounter > 0) {
+            st.lfo.delayCounter--;
             return;
         }
         // レートカウンタ: lfoRate tick ごとに1ステップ進む
-        st.lfoRateCounter++;
-        if (st.lfoRateCounter < st.lfoRate) return;
-        st.lfoRateCounter = 0;
+        st.lfo.rateCounter++;
+        if (st.lfo.rateCounter < st.lfo.rate) return;
+        st.lfo.rateCounter = 0;
 
         // ピッチオフセットを変化させる
-        st.lfoPitchOffset += st.lfoDepth * st.lfoDirection;
-        st.lfoStepCounter++;
+        st.lfo.pitchOffset += st.lfo.depth * st.lfo.direction;
+        st.lfo.stepCounter++;
 
         // 反転: lfoCount ステップ到達で方向反転
-        if (st.lfoStepCounter >= st.lfoCount) {
-            st.lfoDirection = -st.lfoDirection;
-            st.lfoStepCounter = 0;
+        if (st.lfo.stepCounter >= st.lfo.count) {
+            st.lfo.direction = -st.lfo.direction;
+            st.lfo.stepCounter = 0;
         }
 
         // ピッチ即時反映
@@ -2350,19 +2248,19 @@ private:
     void tickPortamento(int ch)
     {
         auto& st = m_channels[ch];
-        if (!st.portaActive) return;
+        if (!st.porta.active) return;
 
         // F-Number(14bit = block<<11 | fnum)をステップ加算
-        st.portaCurrentFnum += st.portaStep;
-        st.portaTicksLeft--;
+        st.porta.currentFnum += st.porta.step;
+        st.porta.ticksLeft--;
 
-        if (st.portaTicksLeft <= 0) {
-            st.portaCurrentFnum = st.portaEndFnum;
-            st.portaActive = false;
+        if (st.porta.ticksLeft <= 0) {
+            st.porta.currentFnum = st.porta.endFnum;
+            st.porta.active = false;
         }
 
         // 14bit値からblock/fnumを分離してレジスタに書き込み
-        int bf = st.portaCurrentFnum;
+        int bf = st.porta.currentFnum;
         if (bf < 0) bf = 0;
         int block = (bf >> 11) & 0x07;
         int fnum  = bf & 0x7FF;
@@ -2397,12 +2295,12 @@ private:
         auto& st = m_channels[ch];
 
         // LFOランタイム状態をリセット（ノートオンごと）
-        st.lfoDelayCounter = st.lfoDelay;
-        st.lfoStepCounter  = 0;
-        st.lfoRateCounter  = 0;
-        st.lfoDirection    = 1;
-        st.lfoPitchOffset  = 0;
-        int pitchOffset = st.detune + st.lfoPitchOffset;
+        st.lfo.delayCounter = st.lfo.delay;
+        st.lfo.stepCounter  = 0;
+        st.lfo.rateCounter  = 0;
+        st.lfo.direction    = 1;
+        st.lfo.pitchOffset  = 0;
+        int pitchOffset = st.detune + st.lfo.pitchOffset;
         int block = 4;
         uint16_t fnum = noteToFnum(noteNum, block);
         int adjusted = static_cast<int>(fnum) + pitchOffset;
@@ -2425,7 +2323,7 @@ private:
         static const uint8_t keyOnData = 0xF0 | 0x02;
 
         for (int op = 0; op < 4; op++) {
-            int opFnum = baseFnum + st.csmDetune[op];
+            int opFnum = baseFnum + st.csm.detune[op];
             if (opFnum < 0) opFnum = 0;
             int opBlock = (opFnum >> 11) & 0x07;
             int opFn    = opFnum & 0x7FF;
@@ -2436,7 +2334,7 @@ private:
             m_engine->writeReg(0, lsbRegs[op], static_cast<uint8_t>(opFn & 0xFF));
 
             // KEY ON（Z80 FMSUB6→FMSUB7→KEYON: 毎オペレータF-Number書き込み後にKEY ON）
-            m_engine->writeReg(0, 0x28, keyOnData);
+            m_engine->writeReg(0, REG_KEY_ON_OFF, keyOnData);
         }
     }
 
@@ -2445,7 +2343,7 @@ private:
     {
         auto& st = m_channels[ch];
         if (!st.noteOn) return;
-        int offset = st.detune + st.lfoPitchOffset;
+        int offset = st.detune + st.lfo.pitchOffset;
         if      (isFM(ch))  fmUpdateFreq(toFMIndex(ch), st.currentNote, offset);
         else if (isSSG(ch)) ssgUpdateFreq(toSSGIndex(ch), st.currentNote, offset);
     }
@@ -2487,18 +2385,18 @@ private:
         if (!m_engine) return;
         // デチューン + LFOオフセット適用
         int mmlCh = fmMmlCh(fi);
-        int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfoPitchOffset;
+        int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfo.pitchOffset;
         fmWriteFreq(fi, noteNum, offset);
 
         uint8_t chKey = (fi < 3) ? static_cast<uint8_t>(fi) : static_cast<uint8_t>(fi - 3 + 4);
-        m_engine->writeReg(0, 0x28, static_cast<uint8_t>(0xF0 | chKey));
+        m_engine->writeReg(0, REG_KEY_ON_OFF, static_cast<uint8_t>(0xF0 | chKey));
     }
 
     void fmKeyOff(int fi)
     {
         if (!m_engine) return;
         uint8_t chKey = (fi < 3) ? static_cast<uint8_t>(fi) : static_cast<uint8_t>(fi - 3 + 4);
-        m_engine->writeReg(0, 0x28, static_cast<uint8_t>(0x00 | chKey));
+        m_engine->writeReg(0, REG_KEY_ON_OFF, static_cast<uint8_t>(0x00 | chKey));
     }
 
     static constexpr int carrierOffsets[8][4] = {
@@ -2518,8 +2416,9 @@ private:
         if (!m_engine) return;
         int port = fmPort(fi);
         int off  = fmOffset(fi);
-        auto it = m_patchMap.find(m_fmPatchNo[fi]);
-        int al = (it != m_patchMap.end()) ? it->second.al : 4;
+        int mmlCh = fmMmlCh(fi);
+        const FmPatch* patch = m_channels[mmlCh].cachedPatch;
+        int al = patch ? patch->al : 4;
 
         for (int oi = 0; oi < 4; oi++) {
             int so = carrierOffsets[al & 7][oi];
@@ -2575,7 +2474,7 @@ private:
 
         // トーンピリオド設定（デチューン + LFOオフセット適用）
         int mmlCh = si + 3;
-        int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfoPitchOffset;
+        int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfo.pitchOffset;
         ssgWriteFreq(si, noteNum, offset);
 
         // MUCOM88互換: ミキサーは初期化時に設定済み（0x38=トーン有効）
@@ -2584,8 +2483,8 @@ private:
         // 振幅設定
         int vol = std::clamp(m_channels[mmlCh].volume - m_globalAtt / 4, 0, 15);
         uint8_t ampReg = static_cast<uint8_t>(vol & 0x0F);
-        if (m_channels[mmlCh].ssgEnvMode) ampReg |= 0x10;
-        m_engine->writeReg(0, 0x08 + si, ampReg);
+        if (m_channels[mmlCh].ssgEnv.mode) ampReg |= 0x10;
+        m_engine->writeReg(0, REG_SSG_AMP_A + si, ampReg);
     }
 
     // ── SSGソフトウェアエンベロープ tick更新（MUCOM88 SOFENV互換）──
@@ -2593,26 +2492,26 @@ private:
     void ssgTickEnvelope(int ch)
     {
         auto& st = m_channels[ch];
-        int v = st.ssgEnvValue;
-        switch (st.ssgEnvPhase) {
+        int v = st.ssgEnv.value;
+        switch (st.ssgEnv.phase) {
         case 1: // ATTACK: envelope += AR, 255でDECAYへ
-            v += st.ssgEnvAR;
-            if (v >= 255) { v = 255; st.ssgEnvPhase = 2; }
+            v += st.ssgEnv.ar;
+            if (v >= 255) { v = 255; st.ssgEnv.phase = 2; }
             break;
         case 2: // DECAY: envelope -= DR, SL以下でSUSTAINへ
-            v -= st.ssgEnvDR;
-            if (v <= st.ssgEnvSL) { v = st.ssgEnvSL; st.ssgEnvPhase = 3; }
+            v -= st.ssgEnv.dr;
+            if (v <= st.ssgEnv.sl) { v = st.ssgEnv.sl; st.ssgEnv.phase = 3; }
             break;
         case 3: // SUSTAIN: envelope -= SR (SR=0なら保持)
-            v -= st.ssgEnvSR;
+            v -= st.ssgEnv.sr;
             if (v < 0) v = 0;
             break;
         case 4: // RELEASE: envelope -= RR, 0で終了
-            v -= st.ssgEnvRR;
-            if (v <= 0) { v = 0; st.ssgEnvPhase = 0; }
+            v -= st.ssgEnv.rr;
+            if (v <= 0) { v = 0; st.ssgEnv.phase = 0; }
             break;
         }
-        st.ssgEnvValue = v;
+        st.ssgEnv.value = v;
     }
 
     void ssgKeyOff(int si)
@@ -2620,7 +2519,7 @@ private:
         if (!m_engine) return;
         // MUCOM88互換: ミキサーは触らない（トーンは有効のまま）
         // 音量を0にするだけで消音（MUCOM88ではソフトウェアエンベロープのRELEASE状態）
-        m_engine->writeReg(0, 0x08 + si, 0x00);
+        m_engine->writeReg(0, REG_SSG_AMP_A + si, 0x00);
     }
 
     void ssgSetVolume(int si, int vol)
@@ -2630,8 +2529,8 @@ private:
         if (m_channels[mmlCh].noteOn) {
             int v = std::clamp(vol - m_globalAtt / 4, 0, 15);
             uint8_t ampReg = static_cast<uint8_t>(v & 0x0F);
-            if (m_channels[mmlCh].ssgEnvMode) ampReg |= 0x10;
-            m_engine->writeReg(0, 0x08 + si, ampReg);
+            if (m_channels[mmlCh].ssgEnv.mode) ampReg |= 0x10;
+            m_engine->writeReg(0, REG_SSG_AMP_A + si, ampReg);
         }
     }
 
@@ -2644,15 +2543,15 @@ private:
         const auto& preset = kSsgPresets[idx];
 
         // エンベロープ
-        st.ssgSoftEnv = true;
-        st.ssgEnvAL = preset.env[0];
-        st.ssgEnvAR = preset.env[1];
-        st.ssgEnvDR = preset.env[2];
-        st.ssgEnvSL = preset.env[3];
-        st.ssgEnvSR = preset.env[4];
-        st.ssgEnvRR = preset.env[5];
+        st.ssgEnv.softEnv = true;
+        st.ssgEnv.al = preset.env[0];
+        st.ssgEnv.ar = preset.env[1];
+        st.ssgEnv.dr = preset.env[2];
+        st.ssgEnv.sl = preset.env[3];
+        st.ssgEnv.sr = preset.env[4];
+        st.ssgEnv.rr = preset.env[5];
         // Z80 ENVPST: OR 10010000B → bit7=softEnv ON, bit4=envMode ON
-        st.ssgEnvMode = true;
+        st.ssgEnv.mode = true;
 
         // ミキサーモード(P): Z80 OTOSSG→NOISE
         bool toneOn  = (preset.mixerP & 1) != 0;
@@ -2661,22 +2560,22 @@ private:
         else         m_ssgMixer |=  (1 << si);
         if (noiseOn) m_ssgMixer &= ~(1 << (si+3));
         else         m_ssgMixer |=  (1 << (si+3));
-        if (m_engine) m_engine->writeReg(0, 0x07, m_ssgMixer);
+        if (m_engine) m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
 
         // LFO(M): Z80 OTOSSG→LFOON
         if (preset.hasLfo) {
-            st.lfoEnabled  = true;
-            st.lfoDelay    = preset.lfoDelay;
-            st.lfoRate     = preset.lfoRate;
-            st.lfoDepth    = preset.lfoDepth;
-            st.lfoCount    = preset.lfoCount;
-            st.lfoDelayCounter = preset.lfoDelay;
-            st.lfoRateCounter  = 0;
-            st.lfoStepCounter  = 0;
-            st.lfoPitchOffset = 0;
-            st.lfoDirection   = 1;
+            st.lfo.enabled  = true;
+            st.lfo.delay    = preset.lfoDelay;
+            st.lfo.rate     = preset.lfoRate;
+            st.lfo.depth    = preset.lfoDepth;
+            st.lfo.count    = preset.lfoCount;
+            st.lfo.delayCounter = preset.lfoDelay;
+            st.lfo.rateCounter  = 0;
+            st.lfo.stepCounter  = 0;
+            st.lfo.pitchOffset = 0;
+            st.lfo.direction   = 1;
         } else {
-            st.lfoEnabled = false;
+            st.lfo.enabled = false;
         }
     }
 
@@ -3037,16 +2936,16 @@ private:
         // m_globalAtt を反映（マスターボリューム・BGMボリューム・フェード・ダッキング対応）
         int rhythmAtt = m_globalAtt * 63 / 127;
         int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
-        m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
+        m_engine->writeReg(0, REG_RHYTHM_TL, static_cast<uint8_t>(adjustedTL & 0x3F));
         // キーオン（bit7=0）
-        m_engine->writeReg(0, 0x10, m_rhythmMask & 0x3F);
+        m_engine->writeReg(0, REG_RHYTHM_KEY, m_rhythmMask & 0x3F);
     }
 
     void rhythmKeyOff()
     {
         if (!m_engine) return;
         // Dump（bit7=1）で楽器を停止
-        m_engine->writeReg(0, 0x10, 0x80 | (m_rhythmMask & 0x3F));
+        m_engine->writeReg(0, REG_RHYTHM_KEY, 0x80 | (m_rhythmMask & 0x3F));
     }
 
     void rhythmSetVolume(int vol)
@@ -3057,6 +2956,6 @@ private:
         // globalAtt適用（recalcGlobalAtt()と同じスケーリング）
         int rhythmAtt = m_globalAtt * 63 / 127;
         int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
-        m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
+        m_engine->writeReg(0, REG_RHYTHM_TL, static_cast<uint8_t>(adjustedTL & 0x3F));
     }
 };
