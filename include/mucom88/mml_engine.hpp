@@ -26,20 +26,6 @@
 #include "fm_engine_interface.hpp"
 
 // FmPatch / Mucom88Patch は fm_common.hpp で定義済み（mml_parser.hpp 経由）
-
-// ── デフォルト音色ファクトリ ─────────────────────────────
-inline Mucom88Patch makeDefaultPatch(int pno = 0)
-{
-    Mucom88Patch p;
-    p.patchNo = pno; p.fb = 0; p.al = 4; p.valid = true;
-    // AR DR SR RR SL TL KS ML DT
-    p.op[0] = { 31, 5, 0, 5, 0, 28, 0, 1, 0 };
-    p.op[1] = { 31, 5, 0, 5, 0, 28, 0, 1, 0 };
-    p.op[2] = { 31, 5, 0, 5, 0, 28, 0, 1, 0 };
-    p.op[3] = { 31, 5, 0, 5, 0,  0, 0, 1, 0 };
-    return p;
-}
-
 // noteToFnum / noteToSSGPeriod は fm_common.hpp で定義済み（mml_parser.hpp 経由）
 
 // =============================================================================
@@ -133,13 +119,6 @@ public:
         m_channels[ch].events      = std::move(evts);
         m_channels[ch].eventIdx    = 0;
         m_channels[ch].noteOn      = false;
-    }
-
-    // ── MML 読み込み（シングルチャンネル用）────────────
-    void loadMml(const std::string& mml, int ch = 0)
-    {
-        if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
-        setEvents(ch, parseSingleChannelMml(mml, ch));
     }
 
     // ── 音色設定（音色番号ベース・0〜127）────────────────
@@ -802,16 +781,6 @@ public:
     // play()でリセット。stop()ではリセットしない（呼び出し側がポーリングで検出するため）。
     [[nodiscard]] bool isFadeOutDone() const { return m_fadeOutDone; }
 
-    // ── グローバル減衰（ダッキング用・後方互換）─────────────
-    // att: FM TL加算値（0=通常、20≈-15dB）。ダッキング成分を設定。
-    // マスターボリューム・フェードとは独立に加算される。
-    void setGlobalAttenuation(int att)
-    {
-        m_duckAtt = att;
-        recalcGlobalAtt();
-    }
-    [[nodiscard]] int globalAttenuation() const { return m_globalAtt; }
-
     // ── 時間を進める（MUCOM88互換: 全チャンネル同期クロック）─
     //
     // MUCOM88ではYM2608 Timer-BのINT3割り込みで全チャンネルが
@@ -982,9 +951,15 @@ public:
         }
     }
 
+private:
+    // ── グローバル減衰（ダッキング内部API）─────────────────
+    void setGlobalAttenuation(int att)
+    {
+        m_duckAtt = att;
+        recalcGlobalAtt();
+    }
+
     // ── 曲全体ループ: 全チャンネルをLポイントに同時巻き戻す ──
-    // 注: Issue #68以降、advance()からは呼ばれない（per-channelループに移行）
-    // 外部からの明示的呼び出し用に残す
     void globalLoopRestart()
     {
         // グローバルtickオフセット更新
@@ -1120,7 +1095,18 @@ public:
         st.loop.tickBase = m_globalTick - st.loop.tick;
     }
 
-private:
+    // ── デフォルト音色ファクトリ ──────────────────────────
+    static Mucom88Patch makeDefaultPatch(int pno = 0)
+    {
+        Mucom88Patch p;
+        p.patchNo = pno; p.fb = 0; p.al = 4; p.valid = true;
+        p.op[0] = { 31, 5, 0, 5, 0, 28, 0, 1, 0 };
+        p.op[1] = { 31, 5, 0, 5, 0, 28, 0, 1, 0 };
+        p.op[2] = { 31, 5, 0, 5, 0, 28, 0, 1, 0 };
+        p.op[3] = { 31, 5, 0, 5, 0,  0, 0, 1, 0 };
+        return p;
+    }
+
     // YM2608 レジスタアドレス定数
     static constexpr uint8_t REG_SSG_NOISE      = 0x06;
     static constexpr uint8_t REG_SSG_MIXER      = 0x07;
@@ -2617,17 +2603,6 @@ public:
         // fmgenEngine.loadPcmDataToAdpcmB(data + 0x400, size - 0x400) → PCMデータロード
         m_pcmLoaded = true;
         return true;
-    }
-
-    [[nodiscard]] bool loadPcmFile(const std::string& path)
-    {
-        std::ifstream ifs(path, std::ios::binary | std::ios::ate);
-        if (!ifs) return false;
-        size_t sz = static_cast<size_t>(ifs.tellg());
-        ifs.seekg(0);
-        std::vector<uint8_t> buf(sz);
-        ifs.read(reinterpret_cast<char*>(buf.data()), sz);
-        return loadPcmData(buf.data(), sz);
     }
 
     // ── mucompcm.bin 統合ロード ──────────────────────────

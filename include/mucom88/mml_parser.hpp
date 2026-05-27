@@ -2116,21 +2116,3 @@ private:
     }
 
 };
-
-// ==========================================================================
-// 後方互換: チャンネル単体でのパース（loadMml互換インターフェース）
-// ==========================================================================
-inline std::vector<MmlEvent> parseSingleChannelMml(
-    const std::string& mml, int channel = 0)
-{
-    // トラック文字なし・1チャンネル分のMMLをパース
-    // 既存の loadMml(str, ch) 互換
-    MmlParser parser;
-    std::string wrapped = "A " + mml;  // Aトラックとして包んでパース
-    auto result = parser.parse(wrapped);
-    // チャンネル0のイベントを返す（トラックAはch=0）
-    auto events = result.channelEvents[0];
-    // チャンネル番号を上書き
-    for (auto& ev : events) ev.channel = channel;
-    return events;
-}
