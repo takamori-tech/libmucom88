@@ -62,6 +62,7 @@ public:
     // KEY_OFF → SL/RR=0x0F → 全オペレータパラメータ → FB/ALG → PAN(L+R)
     virtual void applyPatch(int fmIndex, const FmPatch& patch) noexcept
     {
+        if (fmIndex < 0 || fmIndex > 5) return;  // 範囲外ガード
         int port = (fmIndex < 3) ? 0 : 1;
         int off  = fmIndex % 3;
         // KEY_OFF
@@ -92,6 +93,7 @@ public:
     // noteToFnum()でF-Number/Block計算、0xA4→0xA0の順でラッチ。
     virtual void setFrequency(int fmIndex, int noteNum) noexcept
     {
+        if (fmIndex < 0 || fmIndex > 5) return;  // 範囲外ガード
         int port = (fmIndex < 3) ? 0 : 1;
         int off  = fmIndex % 3;
         int block = 4;
@@ -103,11 +105,13 @@ public:
     // ── FM KEY ON/OFF ────────────────────────────────────
     virtual void fmKeyOn(int fmIndex) noexcept
     {
+        if (fmIndex < 0 || fmIndex > 5) return;  // 範囲外ガード
         uint8_t chKey = (fmIndex < 3) ? static_cast<uint8_t>(fmIndex) : static_cast<uint8_t>(fmIndex - 3 + 4);
         writeReg(0, 0x28, static_cast<uint8_t>(0xF0 | chKey));
     }
     virtual void fmKeyOff(int fmIndex) noexcept
     {
+        if (fmIndex < 0 || fmIndex > 5) return;  // 範囲外ガード
         uint8_t chKey = (fmIndex < 3) ? static_cast<uint8_t>(fmIndex) : static_cast<uint8_t>(fmIndex - 3 + 4);
         writeReg(0, 0x28, static_cast<uint8_t>(0x00 | chKey));
     }

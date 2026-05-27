@@ -153,7 +153,7 @@ public:
     // H=FM4(7), I=FM5(8), J=FM6(9)     ← FM4〜6はH〜J
     // K=ADPCM(10)
     static int trackCharToChannel(char c) {
-        c = std::toupper((unsigned char)c);
+        c = std::toupper(static_cast<unsigned char>(c));
         if (c >= 'A' && c <= 'C') return c - 'A';        // FM1〜3: 0〜2
         if (c >= 'D' && c <= 'F') return 3 + (c - 'D');  // SSG1〜3: 3〜5
         if (c == 'G') return 6;                           // Rhythm: 6
@@ -498,7 +498,7 @@ private:
             }
 
             size_t p = atPos + 1;
-            if (p >= muc.size() || !std::isdigit((unsigned char)muc[p])) {
+            if (p >= muc.size() || !std::isdigit(static_cast<unsigned char>(muc[p]))) {
                 pos = atPos + 1;
                 continue;
             }
@@ -574,7 +574,7 @@ private:
         size_t pos = 0;
         while (pos < mml.size()) {
             if (mml[pos] == '*' && pos + 1 < mml.size()
-                && std::isdigit((unsigned char)mml[pos+1])) {
+                && std::isdigit(static_cast<unsigned char>(mml[pos+1]))) {
                 pos++;
                 int no = readInt(mml, pos, -1);
                 auto it = m_macros.find(no);
@@ -606,7 +606,7 @@ private:
 
         size_t pos = 0;
         while (pos < mml.size()) {
-            char c = std::tolower((unsigned char)mml[pos]);
+            char c = std::tolower(static_cast<unsigned char>(mml[pos]));
 
             // 空白・区切り文字スキップ（|=視認性用区切り、Wiki準拠）
             if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '_' || c == '|') {
@@ -633,14 +633,14 @@ private:
                     // \=N,M: パラメータ設定（グローバル、全チャンネル共有）
                     pos++;
                     int n = 1;
-                    if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                    if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                         n = readInt(mml, pos, 1);
                     if (n < 1) n = 1;
                     if (n > 9) n = 9;
                     m_echoBufIdx = n - 1;  // Z80 BFDAT = N-1（BEFTONEバッファインデックス）
                     if (pos < mml.size() && mml[pos] == ',') {
                         pos++;
-                        if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                        if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                             m_echoVolRed = readInt(mml, pos, 0);
                     }
                 } else if (st.lastFullTicks > 0) {
@@ -702,7 +702,7 @@ private:
             // 大文字 T = テンポ（BPM指定）→ Timer-B値に変換
             // 小文字 t = Timer-B直接値（switch文内で処理）
             if (mml[pos] == 'T' && pos + 1 < mml.size()
-                && std::isdigit((unsigned char)mml[pos + 1])) {
+                && std::isdigit(static_cast<unsigned char>(mml[pos + 1]))) {
                 pos++;
                 int bpm = readInt(mml, pos, 120);
                 // BPM → Timer-B値変換
@@ -730,16 +730,16 @@ private:
             // 大文字 R = リバーブ（MUCOM88 REVERVE/REVSW/REVMOD）
             // 小文字 r（休符）と区別するため tolower の前で処理
             if (mml[pos] == 'R') {
-                if (pos + 1 < mml.size() && std::isalpha((unsigned char)mml[pos+1])) {
+                if (pos + 1 < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos+1]))) {
                     pos++; // skip 'R'
                     // サブコマンド文字列を取得
                     std::string sub;
-                    while (pos < mml.size() && std::isalpha((unsigned char)mml[pos])) {
+                    while (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
                         sub += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
                         pos++;
                     }
                     int param = 0;
-                    if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                         param = readInt(mml, pos, 0);
 
                     if (sub == "F") {
@@ -762,7 +762,7 @@ private:
                     // R<N>: リバーブ音量加減値（Z80: REVERVE, IX+17）
                     pos++; // skip 'R'
                     int rv = 0;
-                    if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                         rv = readInt(mml, pos, 0);
                     MmlEvent ev{};
                     ev.type = MmlEventType::REVERB_ENVELOPE;
@@ -780,7 +780,7 @@ private:
             if (mml[pos] == 'V') {
                 pos++;
                 int ofs = 0;
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     ofs = readInt(mml, pos, 0);
                 st.tvOffset = ofs;
                 continue;
@@ -790,13 +790,13 @@ private:
             // ch==2（Track C = FM ch3）: CSM_MODEイベント生成（Z80 MDSET→TO_EFC/EXMODE）
             // その他のチャンネル: スキップ（PCM制御等）
             if (mml[pos] == 'S' && pos + 1 < mml.size()
-                && (std::isdigit((unsigned char)mml[pos+1]) || mml[pos+1] == '-')) {
+                && (std::isdigit(static_cast<unsigned char>(mml[pos+1])) || mml[pos+1] == '-')) {
                 pos++;
                 int params[4] = {0, 0, 0, 0};
                 params[0] = readInt(mml, pos, 0);
                 for (int pi = 1; pi < 4 && pos < mml.size() && mml[pos] == ','; pi++) {
                     pos++;
-                    if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                         params[pi] = readInt(mml, pos, 0);
                 }
                 if (ch == 2) {
@@ -819,16 +819,16 @@ private:
             if (mml[pos] == 'H') {
                 pos++;
                 int freq = 0, pms = 0, ams = 0;
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     freq = readInt(mml, pos, 0);
                 if (pos < mml.size() && mml[pos] == ',') {
                     pos++;
-                    if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                         pms = readInt(mml, pos, 0);
                 }
                 if (pos < mml.size() && mml[pos] == ',') {
                     pos++;
-                    if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                         ams = readInt(mml, pos, 0);
                 }
                 MmlEvent ev{};
@@ -846,7 +846,7 @@ private:
             if (mml[pos] == 'K') {
                 pos++;
                 int trans = 0;
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     trans = readInt(mml, pos, 0);
                 st.transpose = trans;
                 MmlEvent ev{};
@@ -862,7 +862,7 @@ private:
             if (mml[pos] == 'P') {
                 pos++;
                 int pval = 0;
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-' || mml[pos] == '$'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-' || mml[pos] == '$'))
                     pval = readInt(mml, pos, 0);
                 if (ch >= 3 && ch <= 5) {
                     // SSGチャンネル: ミキサーモードをREG_WRITEで設定
@@ -884,7 +884,7 @@ private:
             // 大文字 E = SSGソフトウェアエンベロープ（音符 e と区別）
             // E AL,AR,DR,SR,SL,RR — 6パラメータ（0-255）
             if (mml[pos] == 'E' && pos + 1 < mml.size()
-                && (std::isdigit((unsigned char)mml[pos+1]) || mml[pos+1] == '-')) {
+                && (std::isdigit(static_cast<unsigned char>(mml[pos+1])) || mml[pos+1] == '-')) {
                 pos++;
                 MmlEvent ev{};
                 ev.type = MmlEventType::SSG_ENVELOPE;
@@ -909,7 +909,7 @@ private:
                     relative = true;
                     pos++;
                 }
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     detune = readInt(mml, pos, 0);
                 if (relative)
                     detune = st.detune + detune;  // 相対: 現在値に加算
@@ -923,7 +923,7 @@ private:
 
             // 大文字 C = クロック設定（全音符のクロック数、デフォルトC128）
             if (mml[pos] == 'C' && pos + 1 < mml.size()
-                && std::isdigit((unsigned char)mml[pos + 1])) {
+                && std::isdigit(static_cast<unsigned char>(mml[pos + 1]))) {
                 pos++;
                 int clk = readInt(mml, pos, WHOLE_TICK);
                 if (clk > 0) st.wholeTick = clk;
@@ -932,7 +932,7 @@ private:
 
             // 大文字 L = ループポイント（MUCOM88: 曲ループ開始位置）
             if (mml[pos] == 'L' && (pos + 1 >= mml.size()
-                || !std::isdigit((unsigned char)mml[pos + 1]))) {
+                || !std::isdigit(static_cast<unsigned char>(mml[pos + 1])))) {
                 pos++;
                 MmlEvent lp{};
                 lp.type    = MmlEventType::LOOP_POINT;
@@ -959,7 +959,7 @@ private:
                 } else {
                     int len = 0;
                     bool explicitLen = false;
-                    if (pos < mml.size() && std::isdigit((unsigned char)mml[pos])) {
+                    if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos]))) {
                         len = readInt(mml, pos, st.defLen);
                         explicitLen = true;
                     } else {
@@ -1016,7 +1016,7 @@ private:
                     for (int ri = 0; ri < 6 && pos < mml.size() && mml[pos] == ','; ri++) {
                         pos++;
                         int ilevel = 0;
-                        if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                        if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                             ilevel = std::clamp(readInt(mml, pos, 0), 0, 31);
                         MmlEvent rw{};
                         rw.type = MmlEventType::REG_WRITE;
@@ -1150,6 +1150,7 @@ private:
                 lf.breakTick    = 0;
                 lf.breakEvIdx   = 0;
                 lf.volumeAtStart = st.volume; // (/)累積補正用
+                if (st.loopStack.size() >= 16) continue;  // ネスト深度上限
                 st.loopStack.push_back(lf);
                 break;
             }
@@ -1167,9 +1168,9 @@ private:
             case ']': {
                 pos++;
                 int count = 2;  // デフォルト2回
-                if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                     count = readInt(mml, pos, 2);
-                if (count < 1) count = 1;
+                count = std::clamp(count, 1, 256);  // 繰り返し回数上限
 
                 if (!st.loopStack.empty()) {
                     auto lf = st.loopStack.back();
@@ -1251,7 +1252,7 @@ private:
             case '(': {
                 pos++;
                 int delta = 1;
-                if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                     delta = readInt(mml, pos, 1);
                 // Z80 VOLUPF: ADD A,(IX+6) — クランプなし
                 // FM: IX+6は+4オフセット含みのため、ユーザーvol=-2でもIX+6=2で有効
@@ -1271,7 +1272,7 @@ private:
             case ')': {
                 pos++;
                 int delta = 1;
-                if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                     delta = readInt(mml, pos, 1);
                 int maxVol = (ch == 10) ? 255 : (ch == 6) ? 63 : 15;  // ADPCM=256段階, リズム=64, FM/SSG=16
                 st.volume = std::min(st.volume + delta, maxVol);
@@ -1288,12 +1289,12 @@ private:
                 // M ビブラート: Mn1,n2,n3,n4 / MF / MW / MC / ML / MD
                 pos++;
                 if (pos < mml.size()) {
-                    char sub = std::tolower((unsigned char)mml[pos]);
+                    char sub = std::tolower(static_cast<unsigned char>(mml[pos]));
                     if (sub == 'f') {
                         // MF0 = LFO OFF, MF1 = LFO ON
                         pos++;
                         int sw = 0;
-                        if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                        if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                             sw = readInt(mml, pos, 0);
                         MmlEvent ev{};
                         ev.type = MmlEventType::VIBRATO_SWITCH;
@@ -1307,7 +1308,7 @@ private:
                         int paramType = (sub == 'w') ? 0 : (sub == 'c') ? 1 : (sub == 'l') ? 2 : 3;
                         pos++;
                         int val = 0;
-                        if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                        if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                             val = readInt(mml, pos, 0);
                         MmlEvent ev{};
                         ev.type = MmlEventType::LFO_PARAM;
@@ -1322,7 +1323,7 @@ private:
                     // Mn1,n2,n3,n4 — カンマ区切り4パラメーター
                     int params[4] = {0, 0, 0, 0};
                     for (int pi = 0; pi < 4 && pos < mml.size(); pi++) {
-                        if (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-')
+                        if (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-')
                             params[pi] = readInt(mml, pos, 0);
                         if (pos < mml.size() && mml[pos] == ',') pos++;
                         else break;
@@ -1349,7 +1350,7 @@ private:
                 // 開始音をパースしてNOTE_ON/NOTE_OFFを生成
                 size_t evCountBefore = events.size();
                 if (pos < mml.size()) {
-                    char nc = std::tolower((unsigned char)mml[pos]);
+                    char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
                     if (nc >= 'a' && nc <= 'g') {
                         parseNote(mml, pos, ch, st, events);
                     }
@@ -1361,7 +1362,7 @@ private:
                 int endNote = -1;
                 if (pos < mml.size() && mml[pos] != '}') {
                     static const int noteOffsets[] = { 9, 11, 0, 2, 4, 5, 7 }; // a-g
-                    char nc = std::tolower((unsigned char)mml[pos]);
+                    char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
                     if (nc >= 'a' && nc <= 'g') {
                         int semi = noteOffsets[nc - 'a'];
                         pos++;
@@ -1414,10 +1415,10 @@ private:
                 // 直接レジスタ書き込み y<addr>,<data>
                 // yXX,slot,data 形式: FM拡張レジスタ名
                 pos++;
-                if (pos < mml.size() && std::isalpha((unsigned char)mml[pos])) {
+                if (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
                     // 拡張レジスタ名をパース
                     std::string regName;
-                    while (pos < mml.size() && std::isalpha((unsigned char)mml[pos])) {
+                    while (pos < mml.size() && std::isalpha(static_cast<unsigned char>(mml[pos]))) {
                         regName += static_cast<char>(std::toupper(static_cast<unsigned char>(mml[pos])));
                         pos++;
                     }
@@ -1483,7 +1484,7 @@ private:
                 // 大文字 K は tolower 前のブロックで絶対指定として処理済み
                 pos++;
                 int trans = 0;
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     trans = readInt(mml, pos, 0);
                 st.transpose += trans;  // 相対: 現在値に加算
                 MmlEvent ev{};
@@ -1496,13 +1497,13 @@ private:
                 // SSGノイズ周波数 w (0-31) → レジスタ 0x06
                 pos++;
                 int noisePeriod = 0;
-                if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     noisePeriod = readInt(mml, pos, 0);
                 // 残りのカンマ区切りパラメータをスキップ
                 // （一部楽曲で w2,0,0,-100 等の拡張形式が使われる）
                 while (pos < mml.size() && mml[pos] == ',') {
                     pos++;
-                    if (pos < mml.size() && (std::isdigit((unsigned char)mml[pos]) || mml[pos] == '-'))
+                    if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                         readInt(mml, pos, 0);
                 }
                 MmlEvent ev{};
@@ -1547,7 +1548,7 @@ private:
             5,  // f
             7,  // g
         };
-        char c = std::tolower((unsigned char)mml[pos]);
+        char c = std::tolower(static_cast<unsigned char>(mml[pos]));
         int semi = noteOffsets[c - 'a'];
         pos++;
 
@@ -1564,7 +1565,7 @@ private:
         if (pos < mml.size() && mml[pos] == '%') {
             pos++;
             directTicks = readInt(mml, pos, 0);
-        } else if (pos < mml.size() && std::isdigit((unsigned char)mml[pos])) {
+        } else if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos]))) {
             len = readInt(mml, pos, st.defLen);
         } else if (st.defLenIsClock) {
             // l%N でデフォルト音長がクロック値の場合
@@ -1603,7 +1604,7 @@ private:
                     ticks += readInt(mml, pos, 0);
                 } else {
                     int elen = 0;
-                    if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                    if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                         elen = readInt(mml, pos, 0);
                     else
                         elen = st.defLen;
@@ -1621,7 +1622,7 @@ private:
                 pos++;
                 while (pos < mml.size() && (mml[pos] == ' ' || mml[pos] == '\t')) pos++;
                 if (pos >= mml.size()) { tieOut = true; break; }
-                char nc = std::tolower((unsigned char)mml[pos]);
+                char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
                 if (!(nc >= 'a' && nc <= 'g')) { tieOut = true; break; }
                 pos++;
                 if (pos < mml.size() && (mml[pos]=='+' || mml[pos]=='#' || mml[pos]=='-')) pos++;
@@ -1631,7 +1632,7 @@ private:
                 if (pos < mml.size() && mml[pos] == '%') {
                     pos++;
                     ticks += readInt(mml, pos, 0);
-                } else if (pos < mml.size() && std::isdigit((unsigned char)mml[pos])) {
+                } else if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos]))) {
                     tlen = readInt(mml, pos, st.defLen);
                     // ゼロ除算防止: &c0 等でtlenが0の場合はデフォルト音長にフォールバック
                     if (tlen <= 0) tlen = st.defLen > 0 ? st.defLen : 4;
@@ -1854,7 +1855,7 @@ private:
                 ticks += readInt(mml, pos, 0);
             } else {
                 int elen = 0;
-                if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                     elen = readInt(mml, pos, 0);
                 else
                     elen = st.defLen;  // Z80互換: デフォルト音長(lコマンド値)
@@ -1876,7 +1877,7 @@ private:
                 tieOut = true;
                 break;
             }
-            char nc = std::tolower((unsigned char)mml[pos]);
+            char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
             if (!(nc >= 'a' && nc <= 'g')) {
                 // タイ先が音名でない場合も行またぎとみなす
                 tieOut = true;
@@ -1898,7 +1899,7 @@ private:
                 ticks += readInt(mml, pos, 0);
                 tlen = 0;  // ^のデフォルト長には使わない
             } else {
-                if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                     tlen = readInt(mml, pos, st.defLen);
                 else
                     tlen = st.defLen;
@@ -1918,7 +1919,7 @@ private:
                     ticks += readInt(mml, pos, 0);
                 } else {
                     int elen2 = 0;
-                    if (pos < mml.size() && std::isdigit((unsigned char)mml[pos]))
+                    if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                         elen2 = readInt(mml, pos, 0);
                     else
                         elen2 = (tlen > 0) ? tlen : st.defLen;
@@ -1945,7 +1946,7 @@ private:
         if (s[pos] == '-') {
             negative = true;
             pos++;
-            if (pos >= s.size() || (!std::isdigit((unsigned char)s[pos]) && s[pos] != '$')) {
+            if (pos >= s.size() || (!std::isdigit(static_cast<unsigned char>(s[pos])) && s[pos] != '$')) {
                 pos--;  // 負号だけで数字がない場合は戻す
                 return defVal;
             }
@@ -1954,24 +1955,28 @@ private:
         // 16進数: $XXXX
         if (s[pos] == '$') {
             pos++;
-            if (pos >= s.size() || !std::isxdigit((unsigned char)s[pos])) {
+            if (pos >= s.size() || !std::isxdigit(static_cast<unsigned char>(s[pos]))) {
                 if (negative) pos--;  // $の前の-も戻す
                 return defVal;
             }
             int val = 0;
-            while (pos < s.size() && std::isxdigit((unsigned char)s[pos])) {
-                char c = std::tolower((unsigned char)s[pos]);
+            int digits = 0;
+            while (pos < s.size() && std::isxdigit(static_cast<unsigned char>(s[pos]))) {
+                if (++digits > 7) break;  // オーバーフロー防止
+                char c = std::tolower(static_cast<unsigned char>(s[pos]));
                 val = val * 16 + (c >= 'a' ? c - 'a' + 10 : c - '0');
                 pos++;
             }
             return negative ? -val : val;
         }
-        if (!std::isdigit((unsigned char)s[pos])) {
+        if (!std::isdigit(static_cast<unsigned char>(s[pos]))) {
             if (negative) pos--;  // 負号だけで数字がない場合は戻す
             return defVal;
         }
         int val = 0;
-        while (pos < s.size() && std::isdigit((unsigned char)s[pos])) {
+        int digits = 0;
+        while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+            if (++digits > 9) break;  // オーバーフロー防止
             val = val * 10 + (s[pos] - '0');
             pos++;
         }
@@ -1981,7 +1986,7 @@ private:
     // セパレーター（数字以外の区切り）をスキップ
     static void skipSep(const std::string& s, size_t& pos)
     {
-        while (pos < s.size() && !std::isdigit((unsigned char)s[pos])
+        while (pos < s.size() && !std::isdigit(static_cast<unsigned char>(s[pos]))
                && s[pos] != '$' && s[pos] != '\n' && s[pos] != ';')
             pos++;
     }
