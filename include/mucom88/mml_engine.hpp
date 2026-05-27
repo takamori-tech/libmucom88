@@ -581,6 +581,39 @@ public:
         return slotIdx;
     }
 
+    // ── スロット指定SE発音 ─────────────────────────────────
+    // slot: 使用するSEスロット番号(0-5)。使用中なら停止して上書き
+    int playSeOnSlot(int slot, const FmPatch& patch, int noteNum, int velocity = 15, int durationMs = 0)
+    {
+        if (slot < 0 || slot >= MAX_SE_SLOTS) return -1;
+        if (m_seMode == SeMode::Rich)
+            return playSeRich(patch, noteNum, velocity, durationMs, slot);
+        else
+            return playSeClassic(patch, noteNum, velocity, durationMs, slot);
+    }
+
+    // ── スロット指定SEシーケンス再生 ───────────────────────
+    // slot: 使用するSEスロット番号(0-5)。使用中なら停止して上書き
+    int playSeSequenceOnSlot(int slot, const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15)
+    {
+        if (!notes || noteCount <= 0) return -1;
+        if (slot < 0 || slot >= MAX_SE_SLOTS) return -1;
+        noteCount = std::clamp(noteCount, 1, (int)SeSlot::MAX_SEQ_NOTES);
+
+        int slotIdx = playSeOnSlot(slot, patch, notes[0].startNote, velocity, notes[0].durationMs);
+        if (slotIdx < 0) return -1;
+
+        auto& s = m_seSlots[slotIdx];
+        s.isSequence = true;
+        s.seqNoteCount = noteCount;
+        s.seqCurrentNote = 0;
+        s.seqVelocity = velocity;
+        for (int i = 0; i < noteCount; i++)
+            s.seqNotes[i] = notes[i];
+
+        return slotIdx;
+    }
+
     void stopSe(int seSlot)
     {
         if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
@@ -2837,9 +2870,12 @@ private:
     }
 
     // Classic SE: BGMチャンネルハイジャック方式
-    int playSeClassic(const FmPatch& patch, int noteNum, int velocity, int durationMs)
+    // slotHint: -1=自動割り当て、0-5=指定スロット
+    int playSeClassic(const FmPatch& patch, int noteNum, int velocity, int durationMs, int slotHint = -1)
     {
-        int slotIdx = seAllocSlot();
+        int slotIdx = (slotHint >= 0 && slotHint < MAX_SE_SLOTS)
+                    ? slotHint : seAllocSlot();
+        if (m_seSlots[slotIdx].active) stopSe(slotIdx);
 
         // BGM FMチャンネル選択（J,I,H,C,B,A優先、ノートオフ中を優先）
         static const int fmChOrder[] = {9, 8, 7, 2, 1, 0};
@@ -2874,10 +2910,12 @@ private:
     }
 
     // Rich SE: SE専用チップ方式
-    int playSeRich(const FmPatch& patch, int noteNum, int velocity, int durationMs)
+    // slotHint: -1=自動割り当て、0-5=指定スロット
+    int playSeRich(const FmPatch& patch, int noteNum, int velocity, int durationMs, int slotHint = -1)
     {
         if (!m_seEngine) return -1;
-        int slotIdx = seAllocSlot();
+        int slotIdx = (slotHint >= 0 && slotHint < MAX_SE_SLOTS)
+                    ? slotHint : seAllocSlot();
         int fi = slotIdx;  // Rich: スロット番号 = FMインデックス（1:1対応）
 
         auto& slot = m_seSlots[slotIdx];
