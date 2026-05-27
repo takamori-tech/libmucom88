@@ -145,6 +145,9 @@ public:
         for (const auto& [no, patch] : muc.patches)
             setPatch(no, patch);
         setWholeTick(muc.wholeTick);
+        // 旧曲のイベントをクリア（チャンネル数が減った場合の残留防止）
+        for (int ch = 0; ch < MAX_MML_CHANNELS; ch++)
+            m_channels[ch].events.clear();
         bool hasLoop = false;
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             if (!muc.channelEvents[ch].empty())
@@ -1107,6 +1110,10 @@ public:
         if (loopLen == 0) loopLen = 1;
         m_loopTickOffset += loopLen;
 
+        // SSGミキサーリセット（トーン有効、ノイズ無効）
+        // チャンネルループの前に1回だけリセット（ループ内で上書きされるのを防止）
+        m_ssgMixer = 0x38;
+
         // 全チャンネル KEY_OFF + 状態リセット + Lポイントへ巻き戻し
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             auto& st = m_channels[ch];
@@ -1168,9 +1175,6 @@ public:
             st.reverbValue    = 0;
             st.reverbEnabled  = false;
             st.reverbQCutOnly = false;
-
-            // SSGミキサーリセット（トーン有効、ノイズ無効）
-            m_ssgMixer = 0x38;
 
             // ループ再開位置までのイベントを走査して状態復元
             for (size_t i = 0; i < st.eventIdx; i++) {
@@ -2763,6 +2767,8 @@ private:
     // noteNum = (octave+1)*12 + semi なので o1c=24。shift = noteNum/12 - 2。
     uint16_t adpcmbNoteToDeltaN(int noteNum)
     {
+        // 負のノート番号によるPCMNMBテーブルの範囲外アクセスを防止
+        noteNum = std::clamp(noteNum, 0, 127);
         int semi    = noteNum % 12;
         int shift   = noteNum / 12 - 2;  // o1 = shift 0
         uint32_t dn = PCMNMB[semi];
@@ -3043,6 +3049,9 @@ private:
         if (!m_engine) return;
         // MUCOM88 リズム音量: v 0-63（全体音量）
         m_rhythmTL = static_cast<uint8_t>(std::clamp(vol, 0, 63) & 0x3F);
-        m_engine->writeReg(0, 0x11, m_rhythmTL);
+        // globalAtt適用（recalcGlobalAtt()と同じスケーリング）
+        int rhythmAtt = m_globalAtt * 63 / 127;
+        int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
+        m_engine->writeReg(0, 0x11, static_cast<uint8_t>(adjustedTL & 0x3F));
     }
 };
