@@ -564,8 +564,10 @@ private:
     // ==========================================================================
     // マクロ展開
     // ==========================================================================
-    std::string expandMacros(const std::string& mml)
+    std::string expandMacros(const std::string& mml, int depth = 0)
     {
+        // 循環マクロによる無限再帰を防止（深さ上限16）
+        if (depth > 16) return mml;
         std::string result;
         result.reserve(mml.size());
         size_t pos = 0;
@@ -576,7 +578,7 @@ private:
                 int no = readInt(mml, pos, -1);
                 auto it = m_macros.find(no);
                 if (it != m_macros.end()) {
-                    result += expandMacros(it->second);  // ネスト対応
+                    result += expandMacros(it->second, depth + 1);  // ネスト対応
                 }
             } else {
                 result += mml[pos++];
@@ -1630,6 +1632,8 @@ private:
                     ticks += readInt(mml, pos, 0);
                 } else if (pos < mml.size() && std::isdigit((unsigned char)mml[pos])) {
                     tlen = readInt(mml, pos, st.defLen);
+                    // ゼロ除算防止: &c0 等でtlenが0の場合はデフォルト音長にフォールバック
+                    if (tlen <= 0) tlen = st.defLen > 0 ? st.defLen : 4;
                     uint32_t t0 = st.wholeTick / tlen;
                     int d = static_cast<int>(t0);
                     while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
@@ -1897,6 +1901,8 @@ private:
                     tlen = readInt(mml, pos, st.defLen);
                 else
                     tlen = st.defLen;
+                // ゼロ除算防止: &note0 等でtlenが0の場合はデフォルト音長にフォールバック
+                if (tlen <= 0) tlen = st.defLen > 0 ? st.defLen : 4;
                 uint32_t tt = applyDots(wt / tlen, mml, pos);
                 ticks += tt;
             }

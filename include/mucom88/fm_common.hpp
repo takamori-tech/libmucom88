@@ -103,8 +103,9 @@ inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
 {
     double freq = 440.0 * std::pow(2.0, (noteNum - 69) / 12.0);
     double divisor = chipClock / 64.0;
-    uint16_t tp = static_cast<uint16_t>(std::round(divisor / freq));
-    return std::clamp(tp, static_cast<uint16_t>(1), static_cast<uint16_t>(4095));
+    // clampをdouble段階で適用し、uint16_t範囲外の値によるUBを防止
+    int tp = static_cast<int>(std::clamp(std::round(divisor / freq), 1.0, 4095.0));
+    return static_cast<uint16_t>(tp);
 }
 
 // =============================================================================
@@ -123,6 +124,8 @@ inline uint16_t noteToSSGPeriod(int noteNum, uint32_t chipClock = 7987200)
 inline FmPatch parseVoiceDatEntry(const uint8_t* voiceDat, size_t dataSize, int patchNo)
 {
     FmPatch p;
+    // 負のpatchNoはsize_tへのキャストで巨大値にラップし境界チェックをすり抜けるため早期リターン
+    if (patchNo < 0) return p;
     size_t off = static_cast<size_t>(patchNo) * 32;
     if (off + 32 > dataSize) return p;
     const uint8_t* rec = &voiceDat[off];
