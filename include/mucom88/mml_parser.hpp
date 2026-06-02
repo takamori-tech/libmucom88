@@ -170,8 +170,12 @@ public:
     struct MucFile {
         std::string title;
         std::string composer;
+        std::string author;    // #author（データ作者）
+        std::string date;      // #date（制作日）
+        std::string comment;   // #comment（コメント）
         std::string voiceFile;
         std::string pcmFile;
+        std::string driver;    // #driver（mucom88 / mucom88e / mucom88em / mucomdotnet。空=未指定=標準mucom88 1.7相当）
         ChipMode    chipMode  = ChipMode::OPNA; // デフォルトOPNA（#mode未指定時）
         int         wholeTick = WHOLE_TICK;  // Cコマンドの値（デフォルト128）
 
@@ -418,8 +422,12 @@ private:
 
         if (startsWith("#title"))    result.title    = getValue(6);
         else if (startsWith("#composer")) result.composer = getValue(9);
+        else if (startsWith("#author"))  result.author  = getValue(7);
+        else if (startsWith("#date"))    result.date    = getValue(5);
+        else if (startsWith("#comment")) result.comment = getValue(8);
         else if (startsWith("#voice"))   result.voiceFile = getValue(6);
         else if (startsWith("#pcm"))     result.pcmFile   = getValue(4);
+        else if (startsWith("#driver"))  result.driver    = getValue(7);
         else if (startsWith("#mode")) {
             // MUCOM88EX拡張: #mode OPNA / #mode OPM / #mode OPNB
             auto mode = getValue(5);
