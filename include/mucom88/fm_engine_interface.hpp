@@ -40,7 +40,8 @@ public:
     virtual bool loadVoiceTable(const std::string& path) = 0;
     virtual bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) = 0;
     virtual bool hasVoiceTable() const noexcept = 0;
-    virtual void playVoice(int voiceId) noexcept = 0;
+    // level: ADPCM-Bボリューム（0=無音、255=最大）。再生開始時に一発で書き込む
+    virtual void playVoice(int voiceId, int level = 255) noexcept = 0;
     virtual void stopVoice() noexcept = 0;
     virtual bool isVoicePlaying() const noexcept = 0;
     virtual void tickVoiceTimer(uint32_t frameCount) noexcept = 0;

@@ -247,8 +247,12 @@ static constexpr int MAX_SSG_CHANNELS = 3;    // D-F
 
 `setDucking()` を設定すると、`playVoice()` 呼び出し時にBGM全チャンネル（FM/SSG/ADPCM-A/ADPCM-B）が即座に減衰し、
 ボイス終了後に releaseSec かけて元の音量に復帰する。
-ボイス再生中は `recalcGlobalAtt()` のガードによりADPCM-Bレジスタ書き込みがスキップされ、
-ボイスの音量は `playVoice()` で masterAtt のみ適用される（フェード・ダッキングの影響を受けない）。
+ボイス再生中は `recalcGlobalAtt()` のガードによりBGM経路のADPCM-Bレジスタ書き込みがスキップされ、
+ボイスはフェード・ダッキングの影響を受けない。
+ボイス自体の音量は `MmlEngine::playVoice()` が `255 - (masterAtt + voiceAtt) * 2`（0-255）を算出し、
+再生開始時に `IFmEngine::playVoice(voiceId, level)` の `level` で ADPCM-B ボリューム（0x10B）へ一発書き込みする。
+→ **マスターボリューム + ボイスボリューム（`setVoiceVolume()`）の両方が反映される**（#196 で修正。
+旧実装は後追い `writeReg(1, 0x0B, ..)` が writeReg ガードに弾かれボイス音量が 0xFF 固定になっていた）。
 デフォルト: **無効**（attTarget=0）。`play()` / `stop()` でリセットされる。
 
 ### チャンネルハイジャック（効果音割り込み用）

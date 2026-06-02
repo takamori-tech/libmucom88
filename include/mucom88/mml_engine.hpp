@@ -440,13 +440,15 @@ public:
         if (m_duckEnabled) {
             setGlobalAttenuation(m_duckAttTarget);
         }
-        // ボイス再生開始 + 音量設定（最後に行うので上書きされない）
-        m_engine->playVoice(voiceId);
+        // ボイス再生開始 + 音量設定。
+        // 音量レベルは再生開始時に playVoice の引数で一発書き込む。
+        // （後追いの writeReg(1,0x0B,..) は writeReg ガード
+        //   「port1 で remainSamples>0 かつ addr<=0x0B は return」に弾かれ
+        //   破棄されていたため廃止。#196）
+        // voiceTotalAtt==0（最大音量）でも常に明示的に値を渡す（副因解消）。
         int voiceTotalAtt = m_masterAtt + m_voiceAtt;
-        if (voiceTotalAtt > 0) {
-            int voiceVol = std::clamp(255 - voiceTotalAtt * 2, 0, 255);
-            m_engine->writeReg(1, 0x0B, static_cast<uint8_t>(voiceVol));
-        }
+        int voiceVol = std::clamp(255 - voiceTotalAtt * 2, 0, 255);
+        m_engine->playVoice(voiceId, voiceVol);
     }
     void stopVoice() {
         if (!m_engine) return;

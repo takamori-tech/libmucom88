@@ -66,7 +66,7 @@ public:
     bool loadVoiceTable(const std::string& path) override;
     bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) override;
     bool hasVoiceTable() const override;
-    void playVoice(int voiceId) override;
+    void playVoice(int voiceId, int level = 255) override;  // level=0-255: ADPCM-B 再生レベル（#196）
     void stopVoice() override;
     bool isVoicePlaying() const override;
     void tickVoiceTimer(uint32_t frameCount) override;
@@ -84,12 +84,12 @@ public:
 [ADPCM-Bデータ...]                            // 実データ（16kHz, 4bit ADPCM-B）
 ```
 
-`playVoice(voiceId)` の実装では:
+`playVoice(voiceId, level)` の実装では:
 1. パンをミュート（ポップノイズ防止）
 2. ADPCM-Bをリセット
 3. 開始/終了アドレスを設定
 4. delta-N = 0x49BA（16kHz再生）
-5. レベル最大 + 再生開始
+5. ボリューム = `level`（引数, 0-255）を 0x10B レジスタへ書き込み + 再生開始（#196: 旧実装はここを 0xFF 固定にし、後追いの音量書き込みがガードで破棄されていた）
 6. パン L+R を復元
 
 `tickVoiceTimer(frameCount)` でボイス再生の残り時間を追跡し、完了を検出する。
@@ -253,8 +253,13 @@ engine.playVoice(0);
 ```
 
 レジスタレベルで FM の TL（Total Level）、SSG の振幅、ADPCM-A の全体 TL、ADPCM-B のボリュームを操作する。
-ボイス再生中は `recalcGlobalAtt()` のガードにより ADPCM-B レジスタ書き込みがスキップされ、
-ボイスの音量は `playVoice()` で masterAtt のみ適用されるため、ボイスの聞き取りやすさが確保される。
+ボイス再生中は `recalcGlobalAtt()` のガードにより BGM 経路の ADPCM-B レジスタ書き込みがスキップされ、
+ダッキング減衰の影響を受けない（ボイスの聞き取りやすさが確保される）。
+ボイス自体の音量は再生開始時に `playVoice(voiceId, level)` の `level` 引数で ADPCM-B ボリューム（0x10B）へ
+一発書き込みされる。`level` は `MmlEngine::playVoice()` が `255 - (masterAtt + voiceAtt) * 2`（0-255でクランプ）
+として算出するため、**マスターボリューム + ボイスボリューム（`setVoiceVolume()`）の両方が反映される**（#196 で修正）。
+後追いの `writeReg(1, 0x0B, ..)` 方式は writeReg ガード（port1 で `remainSamples>0` かつ `addr<=0x0B` は return）に
+弾かれボイス音量が 0xFF 固定になっていたため廃止した。
 
 ダッキングを無効にするには `setDucking(0)` を呼ぶ。
 
