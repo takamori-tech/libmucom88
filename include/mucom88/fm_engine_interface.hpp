@@ -36,17 +36,22 @@ public:
     [[nodiscard]] virtual bool loadAdpcmRomFromMemory(const uint8_t* data, size_t size) = 0;
     [[nodiscard]] virtual bool hasAdpcmRom() const noexcept = 0;
 
-    // ADPCM-B ボイステーブル
-    [[nodiscard]] virtual bool loadVoiceTable(const std::string& path) = 0;
-    [[nodiscard]] virtual bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) = 0;
-    [[nodiscard]] virtual bool hasVoiceTable() const noexcept = 0;
+    // ── ゲーム専用: ADPCM-B ボイス再生（任意実装 / ISP #50）──────────────
+    // これらは「ゲーム中のボイス再生」専用の用途別API。共有コア(チップI/O)とは関心が
+    // 異なるため pure virtual にせず、非pure の no-op/false デフォルト実装を提供する。
+    // ゲーム実装（CLAUDIUS等の FmEngineFmgen）のみ override すればよく、ボイスを使わない
+    // 用途（mucom88v VST の OpnaChipAdapter 等）は override 不要＝スタブを書かずに済む。
+    // 将来ボイス系メソッドを追加してもボイス不要な実装は壊れない（後方互換）。
+    [[nodiscard]] virtual bool loadVoiceTable(const std::string& /*path*/) { return false; }
+    [[nodiscard]] virtual bool loadVoiceTableFromMemory(const uint8_t* /*data*/, size_t /*dataSize*/) { return false; }
+    [[nodiscard]] virtual bool hasVoiceTable() const noexcept { return false; }
     // level: ADPCM-Bボリューム（0=無音、255=最大）。再生開始時に一発で書き込む
-    virtual void playVoice(int voiceId, int level = 255) noexcept = 0;
-    virtual void stopVoice() noexcept = 0;
-    [[nodiscard]] virtual bool isVoicePlaying() const noexcept = 0;
-    virtual void tickVoiceTimer(uint32_t frameCount) noexcept = 0;
+    virtual void playVoice(int /*voiceId*/, int /*level*/ = 255) noexcept {}
+    virtual void stopVoice() noexcept {}
+    [[nodiscard]] virtual bool isVoicePlaying() const noexcept { return false; }
+    virtual void tickVoiceTimer(uint32_t /*frameCount*/) noexcept {}
     // BGM + ボイス両方のADPCM-Bを強制停止
-    virtual void stopAdpcmB() noexcept = 0;
+    virtual void stopAdpcmB() noexcept {}
 
     // ADPCM-B PCMデータロード（mucompcm.binのデータ部分）
     [[nodiscard]] virtual bool loadPcmDataToAdpcmB(const uint8_t* /*data*/, size_t /*size*/) { return false; }

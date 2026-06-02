@@ -62,7 +62,9 @@ public:
     bool loadAdpcmRomFromMemory(const uint8_t* data, size_t size) override;
     bool hasAdpcmRom() const override;
 
-    // ADPCM-B ボイステーブル（ゲームボイス用）
+    // ── ゲーム専用: ADPCM-B ボイス再生（任意実装 / #50）──
+    // これらは IFmEngine が非pure default(no-op/false)を持つ。ゲームボイスを使う実装のみ
+    // override すればよい。VST等ボイス不要な用途は override 不要（スタブを書かなくてよい）。
     bool loadVoiceTable(const std::string& path) override;
     bool loadVoiceTableFromMemory(const uint8_t* data, size_t dataSize) override;
     bool hasVoiceTable() const override;
@@ -73,6 +75,12 @@ public:
     void stopAdpcmB() override;
 };
 ```
+
+> **ゲーム専用ボイスAPIは任意実装（#50）**: `loadVoiceTable`系 / `playVoice` / `stopVoice` /
+> `isVoicePlaying` / `tickVoiceTimer` / `stopAdpcmB` の8メソッドは IFmEngine 側に
+> 非pure のデフォルト実装（no-op / false）がある。**ゲーム中のボイス再生を行う実装だけ override** すればよく、
+> ボイスを使わない用途（mucom88v VST の `OpnaChipAdapter` 等）は override 不要。
+> MmlEngine のボイス系メソッドは `m_engine` 経由でこれらを呼ぶが、未 override なら安全に no-op になる。
 
 ### ボイステーブル形式
 
