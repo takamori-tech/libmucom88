@@ -2612,9 +2612,11 @@ public:
     {
         static constexpr size_t HEADER_SIZE = 0x400;
         if (!data || size <= HEADER_SIZE) return false;
-        loadPcmData(data, size);
+        // best-effort: テーブル解析・ADPCM-Bロードの成否は問わない
+        // （loadPcmDataToAdpcmB のデフォルト実装は false を返すため戻り値は伝播しない）
+        (void)loadPcmData(data, size);
         if (m_engine)
-            m_engine->loadPcmDataToAdpcmB(data + HEADER_SIZE, size - HEADER_SIZE);
+            (void)m_engine->loadPcmDataToAdpcmB(data + HEADER_SIZE, size - HEADER_SIZE);
         return true;
     }
 
