@@ -37,13 +37,20 @@ IFmEngine ── 抽象インターフェース（利用側で実装）
 
 ## 正本と変更フロー
 
-MUCOM88Vリポジトリがサウンド関連コードの正本（single source of truth）。
+**この標準リポジトリ（`/Users/moriyata/git-projects/libmucom88`）が libmucom88 の正本（single source of truth）。**
+ゲーム開発用（CLAUDIUS等）とVSTプラグイン用（mucom88v）を兼ねる独立した共用ライブラリのため、
+**不具合・改善はこのリポジトリでGitHub Issueを立てて作業する**（mucom88v の `vendor/libmucom88` submodule を直接編集しない）。
+
 libmucom88のヘッダーを変更する場合の手順:
 
-1. mucom88v側 (`vendor/libmucom88/`) で編集・ビルド確認
-2. libmucom88リポジトリでコミット＆push
-3. mucom88v の submodule 参照を更新＆push
-4. CLAUDIUS 側の mucom88v submodule を同期＆ビルド確認
+1. この標準リポジトリでIssue起票・`include/mucom88/*.hpp` を編集
+   - ヘッダオンリーの単体検証: `g++ -std=c++17 -Wall -Wextra -I include test.cpp`
+   - コミット＆push（`... (Fix #N)`）
+2. mucom88v の `vendor/libmucom88` submodule を新コミットへ追従
+   - `cmake --build build -- -j8`（IFmEngine等のAPI変更時は OpnaChipAdapter / tools/fm_engine_fmgen を追従）
+   - `build/muc_regtest -sec 20`（全曲 avgRMS >= 0.8 必須）
+   - submodule参照を更新＆push
+3. CLAUDIUS 側の mucom88v submodule を同期＆ビルド確認
 
 ## コーディング規約
 
