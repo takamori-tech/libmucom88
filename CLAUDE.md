@@ -33,7 +33,7 @@ IFmEngine ── 抽象インターフェース（利用側で実装）
 ## 利用プロジェクト
 
 - **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
-- **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。mucom88v経由のnested submoduleとして参照
+- **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
 
 ## 正本と変更フロー
 
