@@ -1187,6 +1187,8 @@ private:
         int  ticksLeft   = 0;       // 残りtick数
         int  step        = 0;       // 毎tickのF-Number増分（符号あり）
         int  currentFnum = 0;       // 現在のF-Number
+        bool ssgPeriod   = false;   // SSG時はSNUMB周期ドメインとして扱う
+        int  ssgShift    = 0;       // SNUMBから実周期へ落とすオクターブシフト
     };
 
     struct PerChLoopState {
@@ -1432,24 +1434,70 @@ private:
     }
 
     // ── PORTAMENTOイベント処理 ───────────────────────────
-    void handlePortamento(int /*ch*/, ChannelState& st, const MmlEvent& ev)
+    void handlePortamento(int ch, ChannelState& st, const MmlEvent& ev)
     {
-        // Z80 CULPTM→PLLFO→PLSKI2: F-Number(block込み14bit)への毎tick加算
-        int startNote = ev.note;
-        int endNote   = ev.value;
-        int dur       = static_cast<int>(ev.duration);
+        setupPortamento(ch, st, ev);
+    }
+
+    [[nodiscard]] static int noteKey(int noteNum) noexcept
+    {
+        int key = noteNum % 12;
+        return key < 0 ? key + 12 : key;
+    }
+
+    [[nodiscard]] static int ssgBasePeriod(int noteNum) noexcept
+    {
+        // Z80 SNUMB table (expand.asm): o1基準のSSG周期。
+        static constexpr int kSnumb[12] = {
+            0x0EE8, 0x0E12, 0x0D48, 0x0C89, 0x0BD5, 0x0B2B,
+            0x0A8A, 0x09F3, 0x0964, 0x08DD, 0x085E, 0x07E6
+        };
+        return kSnumb[noteKey(noteNum)];
+    }
+
+    void setupPortamento(int ch, ChannelState& st, const MmlEvent& ev)
+    {
+        const int startNote = ev.note;
+        const int endNote   = ev.value;
+        int dur = static_cast<int>(ev.duration);
         if (dur <= 0) dur = 1;
-        int sb = 0, eb = 0;
-        uint16_t sf = noteToFnum(startNote, sb);
-        uint16_t ef = noteToFnum(endNote, eb);
-        int startBF = (sb << 11) | sf;
-        int endBF   = (eb << 11) | ef;
+
+        const int semis = endNote - startNote;
+        if (semis == 0) {
+            st.porta.active = false;
+            return;
+        }
+
+        int startValue = 0;
+        int endValue = 0;
+        st.porta.ssgPeriod = isSSG(ch);
+        st.porta.ssgShift = 0;
+
+        if (st.porta.ssgPeriod) {
+            // SSG: SNUMB周期ドメイン。音高上昇は周期減少なのでFMと比率方向が逆。
+            startValue = ssgBasePeriod(startNote);
+            double target = static_cast<double>(startValue);
+            const double ratio = (semis >= 0) ? 0.9438743126816935 : 1.0594630943592953;
+            for (int i = 0; i < std::abs(semis); ++i) target *= ratio;
+            endValue = static_cast<int>(std::lround(target));
+            st.porta.ssgShift = ssgOctaveShift(startNote);
+        } else {
+            // FM: 始点blockを固定し、FNUMBを半音比率で連続的に伸縮する。
+            int startBlock = 0;
+            uint16_t startFnum = noteToFnum(startNote, startBlock);
+            double target = static_cast<double>(startFnum);
+            const double ratio = (semis >= 0) ? 1.0594630943592953 : 0.9438743126816935;
+            for (int i = 0; i < std::abs(semis); ++i) target *= ratio;
+            startValue = (startBlock << 11) | startFnum;
+            endValue = (startBlock << 11) | static_cast<int>(std::lround(target));
+        }
+
         st.porta.active      = true;
-        st.porta.startFnum   = startBF;
-        st.porta.endFnum     = endBF;
-        st.porta.currentFnum = startBF;
+        st.porta.startFnum   = startValue;
+        st.porta.endFnum     = endValue;
+        st.porta.currentFnum = startValue;
         st.porta.ticksLeft   = dur;
-        st.porta.step        = (endBF - startBF) / dur;
+        st.porta.step        = (endValue - startValue) / dur;
     }
 
     // ── CSM_MODEイベント処理 ─────────────────────────────
@@ -2136,21 +2184,7 @@ private:
                 break;
             }
             case MmlEventType::PORTAMENTO: {
-                int startNote = ev.note;
-                int endNote   = ev.value;
-                int dur       = static_cast<int>(ev.duration);
-                if (dur <= 0) dur = 1;
-                int sb = 0, eb = 0;
-                uint16_t sf = noteToFnum(startNote, sb);
-                uint16_t ef = noteToFnum(endNote, eb);
-                int startBF = (sb << 11) | sf;
-                int endBF   = (eb << 11) | ef;
-                st.porta.active      = true;
-                st.porta.startFnum   = startBF;
-                st.porta.endFnum     = endBF;
-                st.porta.currentFnum = startBF;
-                st.porta.ticksLeft   = dur;
-                st.porta.step        = (endBF - startBF) / dur;
+                setupPortamento(ch, st, ev);
                 break;
             }
             case MmlEventType::HARDWARE_LFO:
@@ -2294,12 +2328,11 @@ private:
                 static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
             m_engine->writeReg(port, 0xA0 + off, static_cast<uint8_t>(fnum & 0xFF));
         } else if (isSSG(ch)) {
-            // SSG: 14bit block|fnum → SSGトーンピリオドに変換
-            // PLLFO PLSKI2のSSG部: fnum >> octave でスケーリング
             int si = toSSGIndex(ch);
-            int tp = fnum;
-            // blockからオクターブシフト（block大→ピリオド小）
-            if (block > 0) tp >>= block;
+            int tp = st.porta.ssgPeriod ? st.porta.currentFnum : fnum;
+            // SSG: SNUMB周期ドメインを開始音のオクターブで右シフトする。
+            if (st.porta.ssgPeriod && st.porta.ssgShift > 0) tp >>= st.porta.ssgShift;
+            else if (!st.porta.ssgPeriod && block > 0) tp >>= block;
             tp = std::clamp(tp, 1, 0xFFF);
             m_engine->writeReg(0, si * 2,     static_cast<uint8_t>(tp & 0xFF));
             m_engine->writeReg(0, si * 2 + 1, static_cast<uint8_t>((tp >> 8) & 0x0F));
