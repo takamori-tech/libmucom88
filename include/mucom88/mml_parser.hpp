@@ -837,9 +837,18 @@ private:
                         events.push_back(rw);
                     }
                 } else if (ch == 10) {
-                    // ADPCM-B: v 0-255（Wiki準拠）
-                    // Z80 PCMVOL: PVMODE=0→IX+6(baseVol), PVMODE=1→IX+7(addVol)
-                    st.volume = std::clamp(readInt(mml, pos, 128), 0, 255);
+                    // ADPCM-B(K): v 0-255
+                    // Z80 muc88.asm SETVOL: COMNOW=10 は STV4→(数値)→STV1 に落ち、
+                    // FM と同一の +4 分岐を通る（SUB 3=7 → CP 3=NC → ADD A,E; ADD A,4）。
+                    // コンパイル値 IX+6 = (TV_OFS + v + 4) & 0xFF（8bit wrap）。FM は
+                    // FMVDAT[v+4] で +4 を吸収するが、ADPCM-B は reg 0x0B(0-255 リニア)へ
+                    // 直接書くため +4 が生のオフセットとして残り、ミュート境界も v>=246 へ
+                    // 移動する。raw 値を格納していた旧実装は誤り（Fix #74 / 再 #18）。
+                    // 注: addVol('vm N', PVMODE=1) は Z80 STV5 が MWRIT2 で raw 書込み
+                    //     （+4/TV_OFS なし）。現状 parser は pcmVolMode を常に 0（addVol 未実装）
+                    //     のため +4 は baseVol 経路のみに適用される。addVol 実装時は加えないこと。
+                    int kvol = readInt(mml, pos, 128);
+                    st.volume = (kvol + st.tvOffset + 4) & 0xFF;
                     // pcmVolModeをVOLUMEイベントのnoteフィールドで通知
                     // note=0: baseVol(IX+6), note=1: addVol(IX+7)
                 } else {
