@@ -231,7 +231,10 @@ inline constexpr int kFmVdat[20] = {
 // MUCOM88 STV1互換: FMVDAT[TOTALV + vol]（通常の音量設定）
 [[nodiscard]] inline int fmvdatLookup(int vol15)
 {
-    return kFmVdat[std::clamp(vol15 + 4, 0, 19)];
+    int idx = vol15 + 4;
+    if (idx < 0) idx = 0;
+    if (idx >= 20) idx = 0;  // Z80 STV1: CP 20; XOR A
+    return kFmVdat[idx];
 }
 
 // MUCOM88 FS2→STV2互換: FMVDAT[(vol+4+R) >> 1]（リバーブ用）

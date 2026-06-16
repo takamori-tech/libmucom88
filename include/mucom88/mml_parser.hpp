@@ -356,6 +356,7 @@ private:
         int      defLen    = 4;
         int      tempo     = 120;
         int      volume    = 12;
+        int      volRaw    = 12;  // Z80 VOLINT互換: TV_OFS適用前の直前v値
         int      patch     = 0;
         int      pan       = 3;
         int      staccato  = 0;   // q: 0=レガート（MUCOM88デフォルト）
@@ -842,10 +843,14 @@ private:
                     // note=0: baseVol(IX+6), note=1: addVol(IX+7)
                 } else {
                     // FM/SSG: v 0-15
-                    // Z80コンパイラ互換: TV_OFS(Vコマンド)を加算してからクランプ
+                    // Z80コンパイラ互換: 数値省略時はVOLINT(直前v値)を再利用する。
                     // Z80 muc88.asm STV12(SSG): compiled_vol = TV_OFS + v
                     // Z80 muc88.asm FM path:    compiled_vol = TV_OFS + v + 4（+4はfmVolTable側で吸収済み）
-                    st.volume = std::clamp(readInt(mml, pos, 12) + st.tvOffset, 0, 15);
+                    bool hasArg = pos < mml.size()
+                               && (std::isdigit(static_cast<unsigned char>(mml[pos]))
+                                   || mml[pos] == '-' || mml[pos] == '$');
+                    if (hasArg) st.volRaw = readInt(mml, pos, 0);
+                    st.volume = std::clamp(st.volRaw + st.tvOffset, 0, 15);
                 }
                 MmlEvent ev{};
                 ev.type = MmlEventType::VOLUME;
@@ -1006,6 +1011,8 @@ private:
                 // SSG VOLUPS: 結果が0未満または>=16なら変更を適用しない（RET NC）
                 if (isFMChannel(ch)) {
                     st.volume -= delta;  // FM: クランプなし（Z80互換）
+                } else if (isSSGChannel(ch)) {
+                    st.volume = ssgVolUp(st.volume, -delta);
                 } else {
                     st.volume = std::max(st.volume - delta, 0);
                 }
@@ -1021,8 +1028,14 @@ private:
                 int delta = 1;
                 if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
                     delta = readInt(mml, pos, 1);
-                int maxVol = (ch == 10) ? 255 : (ch == 6) ? 63 : 15;  // ADPCM=256段階, リズム=64, FM/SSG=16
-                st.volume = std::min(st.volume + delta, maxVol);
+                if (isFMChannel(ch)) {
+                    st.volume += delta;  // FM: クランプなし（Z80互換）
+                } else if (isSSGChannel(ch)) {
+                    st.volume = ssgVolUp(st.volume, delta);
+                } else {
+                    int maxVol = (ch == 10) ? 255 : (ch == 6) ? 63 : 15;  // ADPCM=256段階, リズム=64
+                    st.volume = std::min(st.volume + delta, maxVol);
+                }
                 MmlEvent ev{};
                 ev.type = MmlEventType::VOLUME;
                 ev.tick = st.tick; ev.value = st.volume; ev.channel = ch;
@@ -1978,6 +1991,15 @@ private:
 
     // FMチャンネル判定（MmlEngine::isFMと同一）
     static bool isFMChannel(int ch) { return ch <= 2 || (ch >= 7 && ch <= 9); }
+    static bool isSSGChannel(int ch) { return ch >= 3 && ch <= 5; }
+
+    static int ssgVolUp(int curVol, int signedDelta)
+    {
+        int lo = curVol & 0x0F;
+        int r = (lo + signedDelta) & 0xFF;
+        if (r >= 16) return curVol;
+        return (curVol & ~0x0F) | r;
+    }
 
     // ==========================================================================
     // tick計算（付点・^ クロック延長・& タイを処理）
