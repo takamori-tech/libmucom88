@@ -1370,8 +1370,8 @@ private:
         st.currentNote  = ev.note;
         st.ssgEnv.releasing = false;
         st.reverb.active = false;
-        // SSGソフトウェアエンベロープ: ATTACK開始
-        if (isSSG(ch) && st.ssgEnv.softEnv) {
+        // SSGは常にSOFENV経由。E/@N未設定ならAL/AR=0のままなので無音になる。
+        if (isSSG(ch)) {
             st.ssgEnv.value = st.ssgEnv.al;
             st.ssgEnv.phase = 1;  // ATTACK
             st.ssgEnv.keyOnTick = true;  // このtickではSOFENV進行スキップ
@@ -1394,12 +1394,8 @@ private:
             // FM リバーブ: KEY_OFFの代わりにFS2で音量設定
             fmSetReverbVolume(toFMIndex(ch), st.volume, st.reverb.value);
             st.reverb.active = true;
-        } else if (isSSG(ch) && st.ssgEnv.softEnv) {
-            st.ssgEnv.phase = 4;  // RELEASE
-            st.noteOn = false;
         } else if (isSSG(ch)) {
-            st.ssgEnv.releasing = true;
-            st.ssgEnv.relVol = std::clamp(st.volume - m_globalAtt / 4, 0, 15);
+            st.ssgEnv.phase = 4;  // RELEASE
             st.noteOn = false;
         } else {
             doKeyOff(ch);
@@ -1663,6 +1659,7 @@ private:
                 st.ssgEnv.sr = ev.envSR;
                 st.ssgEnv.sl = ev.envSL;
                 st.ssgEnv.rr = ev.envRR;
+                if (isSSG(ch)) st.reverb.value = ev.envRR;
                 break;
             case MmlEventType::PORTAMENTO:
                 handlePortamento(ch, st, ev);
@@ -1670,6 +1667,7 @@ private:
             case MmlEventType::REVERB_ENVELOPE:
                 st.reverb.value = ev.value;
                 st.reverb.enabled = true;
+                if (isSSG(ch)) st.ssgEnv.rr = ev.value;
                 break;
             case MmlEventType::REVERB_SWITCH:
                 st.reverb.enabled = (ev.value != 0);
@@ -1769,7 +1767,9 @@ private:
             case MmlEventType::VIBRATO_SWITCH:
                 st.lfo.enabled = (ev.value != 0); break;
             case MmlEventType::REVERB_ENVELOPE:
-                st.reverb.value = ev.value; st.reverb.enabled = true; break;
+                st.reverb.value = ev.value; st.reverb.enabled = true;
+                if (isSSG(ch)) st.ssgEnv.rr = ev.value;
+                break;
             case MmlEventType::REVERB_SWITCH:
                 st.reverb.enabled = (ev.value != 0); break;
             case MmlEventType::SSG_ENVELOPE:
@@ -1777,6 +1777,7 @@ private:
                 st.ssgEnv.al = ev.envAL; st.ssgEnv.ar = ev.envAR;
                 st.ssgEnv.dr = ev.envDR; st.ssgEnv.sl = ev.envSL;
                 st.ssgEnv.sr = ev.envSR; st.ssgEnv.rr = ev.envRR;
+                if (isSSG(ch)) st.reverb.value = ev.envRR;
                 break;
             case MmlEventType::LOOP_POINT:
                 st.loop.hasPoint = true;
@@ -1939,7 +1940,7 @@ private:
             auto& cst = m_channels[ch];
             int si = toSSGIndex(ch);
 
-            if (cst.ssgEnv.softEnv) {
+            {
                 // ── MUCOM88 SOFENV互換 ADSRステートマシン ──
                 // Z80 SSSUB0: BIT 7,(IX+6) → エンベロープ有効フラグのみチェック
                 // Z80はnoteOnやphaseに関係なく、フラグが立っていれば毎tick書き込み。
@@ -1965,14 +1966,6 @@ private:
                 if (amp > 15) amp = 15;
                 if (amp < 0) amp = 0;
                 m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(amp));
-            } else if (cst.ssgEnv.releasing) {
-                // Eコマンド未使用の簡易リリース
-                cst.ssgEnv.relVol -= 2;
-                if (cst.ssgEnv.relVol <= 0) {
-                    cst.ssgEnv.relVol = 0;
-                    cst.ssgEnv.releasing = false;
-                }
-                m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(cst.ssgEnv.relVol & 0x0F));
             }
         }
     }
@@ -2548,11 +2541,7 @@ private:
         // MUCOM88互換: ミキサーは初期化時に設定済み（0x38=トーン有効）
         // keyOn毎のミキサー操作はしない（MUCOM88のSSGはソフトウェアエンベロープで制御）
 
-        // 振幅設定
-        int vol = std::clamp(m_channels[mmlCh].volume - m_globalAtt / 4, 0, 15);
-        uint8_t ampReg = static_cast<uint8_t>(vol & 0x0F);
-        if (m_channels[mmlCh].ssgEnv.mode) ampReg |= 0x10;
-        m_engine->writeReg(0, REG_SSG_AMP_A + si, ampReg);
+        // 振幅はSOFENVが次のadvanceSsgEnvelopes()で書く。
     }
 
     // ── SSGソフトウェアエンベロープ tick更新（MUCOM88 SOFENV互換）──
@@ -2618,6 +2607,7 @@ private:
         st.ssgEnv.sl = preset.env[3];
         st.ssgEnv.sr = preset.env[4];
         st.ssgEnv.rr = preset.env[5];
+        st.reverb.value = preset.env[5];
         // Z80 ENVPST: OR 10010000B → bit7=softEnv ON, bit4=envMode ON
         st.ssgEnv.mode = true;
 
