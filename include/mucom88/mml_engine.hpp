@@ -2401,8 +2401,11 @@ private:
     {
         auto& st = m_channels[ch];
         if (!st.noteOn) return;
-        int offset = st.detune + (isSSG(ch) ? ssgScaleLfo(st.lfo.pitchOffset, st.currentNote)
-                                            : st.lfo.pitchOffset);
+        // Z80(music.asm:1644-1676,1880-1892): SSG は detune(D命令)も LFO 同様、
+        // octave-1 基準の SNUMB 周期に加算後 octave 回右シフトする → 実効 = (detune+lfo)>>octave。
+        // FM は最終 F-Number に 1:1 加算（#70: SSG の detune も octave 縮小、#63 の姉妹）。
+        int offset = isSSG(ch) ? ssgScaleLfo(st.detune + st.lfo.pitchOffset, st.currentNote)
+                               : st.detune + st.lfo.pitchOffset;
         if      (isFM(ch))  fmUpdateFreq(toFMIndex(ch), st.currentNote, offset);
         else if (isSSG(ch)) ssgUpdateFreq(toSSGIndex(ch), st.currentNote, offset);
     }
@@ -2544,9 +2547,10 @@ private:
         if (!m_engine) return;
 
         // トーンピリオド設定（デチューン + LFOオフセット適用）
+        // #70: SSG は detune も octave 縮小（detune+lfo を一括して octave 右シフト）。
         int mmlCh = si + 3;
-        int offset = m_channels[mmlCh].detune
-                   + ssgScaleLfo(m_channels[mmlCh].lfo.pitchOffset, noteNum);
+        int offset = ssgScaleLfo(m_channels[mmlCh].detune + m_channels[mmlCh].lfo.pitchOffset,
+                                 noteNum);
         ssgWriteFreq(si, noteNum, offset);
 
         // MUCOM88互換: ミキサーは初期化時に設定済み（0x38=トーン有効）
