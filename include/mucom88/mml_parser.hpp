@@ -370,6 +370,8 @@ private:
         // echoCount/echoVolRedはグローバル変数（m_echoBufIdx/m_echoVolRed）に移動
         // Z80コンパイラのBFDAT/VDDATは全チャンネル共有のグローバル変数
         uint32_t lastFullTicks = 0; // Z80 BEFCO互換: 直前ノートのフル音長（staccato前）
+        // Z80 BEFTONE互換: 実NOTE_ONの9段履歴。index0=最新、echo/tie継続では更新しない。
+        std::array<int, 9> toneHistory { -1,-1,-1,-1,-1,-1,-1,-1,-1 };
         int      pcmVolMode = 0;   // V0=baseVol(IX+6), V1=addVol(IX+7)（ADPCM-B用、現在未使用）
         int      tvOffset   = 0;   // V N: Total Volume Offset（Z80 muc88.asm TV_OFS互換）
         bool     reverbEnabled  = false; // リバーブON/OFF追跡（パーサー内、^タイ境界判定用）
@@ -1136,56 +1138,58 @@ private:
                     m_echoVolRed = readInt(mml, pos, 0);
             }
         } else if (st.lastFullTicks > 0) {
-            // \: 直前のノートをエコー再生（Z80 STBF3互換）
+            // \: BEFTONE[BFDAT] のノートをエコー再生（Z80 STBF3互換）
             // Z80はBEFCO（直前ノートのフル音長、staccato適用前）を使用する。
-            // events[i].durationはstaccato適用後のkeyOnTicksなので、
-            // st.lastFullTicks（= Z80のBEFCO相当）でtickを進める。
             // Z80 STBF3にはechoCount>0チェックがない — \は常にエコーを生成する
-            uint32_t echoDur = st.lastFullTicks;  // Z80 BEFCO互換
-            for (int i = static_cast<int>(events.size()) - 1; i >= 0; i--) {
-                if (events[i].type == MmlEventType::NOTE_ON && events[i].channel == ch) {
-                    // 音量下げイベント
-                    MmlEvent volDown{};
-                    volDown.type = MmlEventType::VOLUME;
-                    volDown.tick = st.tick;
-                    // Z80 STBF3: 0xFB(-M) → VOLUPF → ADD A,(IX+6) — クランプなし
-                    // FM: IX+6は+4オフセット含みのため負値許容（Issue #57と同じ）
-                    // SSG: VOLUPS → RET NC で範囲外なら変更しない → 0クランプ
-                    if (isFMChannel(ch)) {
-                        volDown.value = st.volume - m_echoVolRed;  // FM: クランプなし
-                    } else {
-                        volDown.value = std::max(st.volume - m_echoVolRed, 0);
-                    }
-                    volDown.channel = ch;
-                    volDown.note = 3;  // エコー音量マーカー（ブラケットループvolDelta補正対象、vコマンド検出除外）
-                    events.push_back(volDown);
+            int idx = std::clamp(m_echoBufIdx, 0, 8);
+            int echoNote = st.toneHistory[static_cast<size_t>(idx)];
+            if (echoNote >= 0) {
+                uint32_t echoDur = st.lastFullTicks;  // Z80 BEFCO互換
 
-                    // ノート複製（同じ音高、フル音長で発音）
-                    MmlEvent echoOn = events[i];
-                    echoOn.tick = st.tick;
-                    echoOn.duration = echoDur;
-                    events.push_back(echoOn);
-
-                    // NOTE_OFF
-                    MmlEvent echoOff{};
-                    echoOff.type = MmlEventType::NOTE_OFF;
-                    echoOff.tick = st.tick + echoDur;
-                    echoOff.note = events[i].note;
-                    echoOff.channel = ch;
-                    events.push_back(echoOff);
-
-                    st.tick += echoDur;
-
-                    // 音量復帰
-                    MmlEvent volUp{};
-                    volUp.type = MmlEventType::VOLUME;
-                    volUp.tick = st.tick;
-                    volUp.value = st.volume;
-                    volUp.channel = ch;
-                    volUp.note = 3;  // エコー音量マーカー
-                    events.push_back(volUp);
-                    break;
+                // 音量下げイベント
+                MmlEvent volDown{};
+                volDown.type = MmlEventType::VOLUME;
+                volDown.tick = st.tick;
+                // Z80 STBF3: 0xFB(-M) → VOLUPF → ADD A,(IX+6) — クランプなし
+                // FM: IX+6は+4オフセット含みのため負値許容（Issue #57と同じ）
+                // SSG: VOLUPS → RET NC で範囲外なら変更しない → 0クランプ
+                if (isFMChannel(ch)) {
+                    volDown.value = st.volume - m_echoVolRed;  // FM: クランプなし
+                } else {
+                    volDown.value = std::max(st.volume - m_echoVolRed, 0);
                 }
+                volDown.channel = ch;
+                volDown.note = 3;  // エコー音量マーカー（ブラケットループvolDelta補正対象、vコマンド検出除外）
+                events.push_back(volDown);
+
+                // エコーノート（履歴トーン、フル音長）
+                MmlEvent echoOn{};
+                echoOn.type     = MmlEventType::NOTE_ON;
+                echoOn.tick     = st.tick;
+                echoOn.note     = echoNote;
+                echoOn.velocity = volDown.value * 8;
+                echoOn.duration = echoDur;
+                echoOn.channel  = ch;
+                events.push_back(echoOn);
+
+                // NOTE_OFF
+                MmlEvent echoOff{};
+                echoOff.type = MmlEventType::NOTE_OFF;
+                echoOff.tick = st.tick + echoDur;
+                echoOff.note = echoNote;
+                echoOff.channel = ch;
+                events.push_back(echoOff);
+
+                st.tick += echoDur;
+
+                // 音量復帰
+                MmlEvent volUp{};
+                volUp.type = MmlEventType::VOLUME;
+                volUp.tick = st.tick;
+                volUp.value = st.volume;
+                volUp.channel = ch;
+                volUp.note = 3;  // エコー音量マーカー
+                events.push_back(volUp);
             }
         }
     }
@@ -1957,6 +1961,8 @@ private:
 
         st.tick += ticks;
         st.lastFullTicks = ticks;  // Z80 BEFCO互換: エコー用にフル音長を記録
+        for (int h = 8; h > 0; --h) st.toneHistory[static_cast<size_t>(h)] = st.toneHistory[static_cast<size_t>(h - 1)];
+        st.toneHistory[0] = noteNum;
     }
 
     // 複数ドット読み取り + tick加算ヘルパー
