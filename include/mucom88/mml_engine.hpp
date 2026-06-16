@@ -2364,7 +2364,8 @@ private:
     {
         auto& st = m_channels[ch];
         if (!st.noteOn) return;
-        int offset = st.detune + st.lfo.pitchOffset;
+        int offset = st.detune + (isSSG(ch) ? ssgScaleLfo(st.lfo.pitchOffset, st.currentNote)
+                                            : st.lfo.pitchOffset);
         if      (isFM(ch))  fmUpdateFreq(toFMIndex(ch), st.currentNote, offset);
         else if (isSSG(ch)) ssgUpdateFreq(toSSGIndex(ch), st.currentNote, offset);
     }
@@ -2473,6 +2474,18 @@ private:
     //   0x0D:      エンベロープ形状（4bit）
     // =====================================================================
     // ── SSG 周波数書き込み（オフセット付き）────────────
+    [[nodiscard]] static int ssgOctaveShift(int noteNum) noexcept
+    {
+        int sh = noteNum / 12 - 2;  // o1(noteNum=24)→0, o6(noteNum=84)→5
+        return sh < 0 ? 0 : sh;
+    }
+
+    [[nodiscard]] static int ssgScaleLfo(int lfoOffset, int noteNum) noexcept
+    {
+        int mag = (lfoOffset < 0 ? -lfoOffset : lfoOffset) >> ssgOctaveShift(noteNum);
+        return lfoOffset < 0 ? -mag : mag;
+    }
+
     void ssgWriteFreq(int si, int noteNum, int pitchOffset)
     {
         if (!m_engine) return;
@@ -2495,7 +2508,8 @@ private:
 
         // トーンピリオド設定（デチューン + LFOオフセット適用）
         int mmlCh = si + 3;
-        int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfo.pitchOffset;
+        int offset = m_channels[mmlCh].detune
+                   + ssgScaleLfo(m_channels[mmlCh].lfo.pitchOffset, noteNum);
         ssgWriteFreq(si, noteNum, offset);
 
         // MUCOM88互換: ミキサーは初期化時に設定済み（0x38=トーン有効）
