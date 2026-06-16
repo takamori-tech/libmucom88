@@ -1626,7 +1626,10 @@ private:
                 switch (ev.vibDelay) {
                     case 0: st.lfo.delay = ev.value; break;
                     case 1: st.lfo.rate  = std::max(ev.value, 1); break;
-                    case 2: st.lfo.depth = ev.value; break;
+                    case 2:
+                        st.lfo.depth = ev.value;
+                        lfoReset(st.lfo);
+                        break;
                     case 3: st.lfo.count = std::max(ev.value, 1); break;
                 }
                 break;
@@ -1796,17 +1799,22 @@ private:
     // =====================================================================
     // 統合ディスパッチ（FM / SSG / Rhythm）
     // =====================================================================
+    void lfoReset(LfoState& lfo) noexcept
+    {
+        lfo.delayCounter = lfo.delay;
+        lfo.stepCounter  = lfo.count / 2;  // Z80 SETPEK: SRL A → peak/2
+        lfo.rateCounter  = 0;
+        lfo.direction    = 1;
+        lfo.pitchOffset  = 0;
+    }
+
     void doKeyOn(int ch, int noteNum, int velocity)
     {
         // LFOランタイム状態をリセット（ノートオンごとに遅延から再開）
         // Z80 LFORST+LFORST2: delay counter = delay, peak counter = peak/2(SRL A),
         // waveform position = initial depth, rate counter = rate
         auto& st = m_channels[ch];
-        st.lfo.delayCounter = st.lfo.delay;
-        st.lfo.stepCounter  = st.lfo.count / 2;  // Z80 SETPEK: SRL A → peak/2
-        st.lfo.rateCounter  = 0;
-        st.lfo.direction    = 1;
-        st.lfo.pitchOffset  = 0;
+        lfoReset(st.lfo);
 
         if      (isFM(ch))     fmKeyOn(toFMIndex(ch), noteNum, velocity);
         else if (isSSG(ch))    ssgKeyOn(toSSGIndex(ch), noteNum);
