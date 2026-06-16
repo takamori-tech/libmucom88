@@ -759,8 +759,13 @@ private:
 16の倍数でないframeCountを渡しても正しく動作する。
 
 ### スレッドセーフティ
-MmlEngine はスレッドセーフではない。`advance()` と `playVoice()` 等は
-同一スレッド（オーディオスレッド）から呼ぶこと。
+MmlEngine はスレッドセーフではない。状態を変更する全 mutator
+（`advance()` / `renderMixed()` / `playVoice()` / `stopVoice()` / `tickVoiceTimer()` /
+`playSe()` / `playSeSequence()` / `stopSe()` / `setGlobalAttenuation()` 等）は
+**同一オーディオスレッド**（または外部でオーディオコールバックと相互排他）から呼ぶこと。
+`m_voiceDuckState` は `std::atomic` だが、これは同一スレッド内で store と CAS が
+混在しても処理順に依存せず破綻しないための実装手段であり、クロススレッド安全を
+保証するものではない（別スレッドから mutator を呼ぶのは未定義）。
 UIスレッドからの状態取得（`chNoteOn()` 等）はアトミックではないが、
 表示用途であれば実用上問題ない。
 

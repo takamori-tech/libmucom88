@@ -41,14 +41,18 @@ public:
     // SSG 3チャンネル (D-F=3-5)
     static constexpr int MAX_SSG_CHANNELS = 3;
 
-    // ボイス再生＋ダッキング状態マシン（スレッド安全）
-    // ゲームスレッド(playVoice/stopVoice)とオーディオスレッド(tickVoiceTimer)間の
-    // 安全な状態遷移を std::atomic + CAS で実現する。
-    //   Idle → Playing:    playVoice()      [ゲームスレッド, store]
-    //   Playing → Releasing: tickVoiceTimer() [オーディオスレッド, CAS]
-    //   Releasing → Idle:  tickVoiceTimer()  [オーディオスレッド, store]
-    //   Any → Playing:     playVoice() 連続呼び出し [ゲームスレッド, store]
-    //   Any → Idle:        stopVoice()/stop() [exchange]
+    // ボイス再生＋ダッキング状態マシン
+    // 契約: playVoice/stopVoice/tickVoiceTimer/playSe系を含む全 mutator は
+    //       同一オーディオスレッド（または外部でオーディオコールバックと相互排他）から呼ぶこと。
+    //       MmlEngine 自体はスレッドセーフではない（docs/cpp_coding_standards.md）。
+    // std::atomic + CAS を使うのはスレッド間同期のためではなく、同一スレッド内で
+    // store と CAS が混在しても処理順に依存せず破綻しない単純さを得るため（store/CAS は
+    // 状態の取り違えを起こさない）。クロススレッド安全を主張するものではない。
+    //   Idle → Playing:      playVoice()       [store]
+    //   Playing → Releasing: tickVoiceTimer()  [CAS]
+    //   Releasing → Idle:    tickVoiceTimer()  [store]
+    //   Any → Playing:       playVoice() 連続呼び出し [store]
+    //   Any → Idle:          stopVoice()/stop() [exchange]
     enum class VoiceDuckState : int {
         Idle,       // ボイス未再生、ダッキングなし
         Playing,    // ボイス再生中（Kトラック抑制 + 音量減衰）
@@ -173,6 +177,11 @@ public:
         m_fading   = false;
         m_fadeAction   = FadeAction::None;
         m_fadeOutDone  = false;
+        // ダッキング状態を Idle へリセット（#58: stop() と対称化。前曲の
+        // Playing/Releasing が残ると recalcGlobalAtt() の ADPCM-B ガード等に
+        // 影響するため、リリース残量カウンタも 0 にする）。
+        m_voiceDuckState.store(VoiceDuckState::Idle, std::memory_order_release);
+        m_duckReleaseSamplesLeft = 0;
         m_globalAtt = m_masterAtt + m_bgmAtt;
         stopAllSe();
         m_seAllocCounter = 0;
@@ -424,7 +433,7 @@ public:
     [[nodiscard]] bool loadVoiceTableFromMemory(const uint8_t* data, size_t size) {
         return m_engine ? m_engine->loadVoiceTableFromMemory(data, size) : false;
     }
-    void playVoice(int voiceId) {
+    void playVoice(int voiceId) noexcept {
         if (!m_engine) return;
         // BGMのKトラック（ADPCM-B）を停止してからボイス再生を開始
         if (m_channels[10].noteOn) {
@@ -447,7 +456,7 @@ public:
         int voiceVol = std::clamp(255 - voiceTotalAtt * 2, 0, 255);
         m_engine->playVoice(voiceId, voiceVol);
     }
-    void stopVoice() {
+    void stopVoice() noexcept {
         if (!m_engine) return;
         m_engine->stopVoice();
         auto prev = m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
@@ -496,7 +505,7 @@ public:
             setGlobalAttenuation(0);
         }
     }
-    void stopAdpcmB() {
+    void stopAdpcmB() noexcept {
         if (!m_engine) return;
         m_engine->stopAdpcmB();
         auto prev = m_voiceDuckState.exchange(VoiceDuckState::Idle, std::memory_order_acq_rel);
@@ -547,7 +556,7 @@ public:
     // patch: FM音色, noteNum: MIDIノート番号, velocity: 音量(0-15)
     // durationMs: 自動停止時間(ミリ秒)。0=手動停止のみ
     // 戻り値: SEスロット番号(0-5)。割り当て失敗時は -1
-    [[nodiscard]] int playSe(const FmPatch& patch, int noteNum, int velocity = 15, int durationMs = 0)
+    [[nodiscard]] int playSe(const FmPatch& patch, int noteNum, int velocity = 15, int durationMs = 0) noexcept
     {
         if (m_seMode == SeMode::Rich)
             return playSeRich(patch, noteNum, velocity, durationMs);
@@ -559,7 +568,7 @@ public:
     // patch: FM音色, notes: ノート配列, noteCount: ノート数(1-8)
     // velocity: 音量(0-15)
     // 戻り値: SEスロット番号(0-5), -1=失敗
-    [[nodiscard]] int playSeSequence(const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15)
+    [[nodiscard]] int playSeSequence(const FmPatch& patch, const SeSequenceNote* notes, int noteCount, int velocity = 15) noexcept
     {
         if (!notes || noteCount <= 0) return -1;
         noteCount = std::clamp(noteCount, 1, static_cast<int>(SeSlot::MAX_SEQ_NOTES));
@@ -573,7 +582,6 @@ public:
         slot.isSequence = true;
         slot.seqNoteCount = noteCount;
         slot.seqCurrentNote = 0;
-        slot.seqVelocity = velocity;
         for (int i = 0; i < noteCount; i++)
             slot.seqNotes[i] = notes[i];
 
@@ -606,14 +614,13 @@ public:
         s.isSequence = true;
         s.seqNoteCount = noteCount;
         s.seqCurrentNote = 0;
-        s.seqVelocity = velocity;
         for (int i = 0; i < noteCount; i++)
             s.seqNotes[i] = notes[i];
 
         return slotIdx;
     }
 
-    void stopSe(int seSlot)
+    void stopSe(int seSlot) noexcept
     {
         if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
         auto& slot = m_seSlots[seSlot];
@@ -630,13 +637,13 @@ public:
         slot = SeSlot{};
     }
 
-    void stopAllSe()
+    void stopAllSe() noexcept
     {
         for (int i = 0; i < MAX_SE_SLOTS; i++)
             stopSe(i);
     }
 
-    void setSeFrequency(int seSlot, int noteNum)
+    void setSeFrequency(int seSlot, int noteNum) noexcept
     {
         if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
         auto& slot = m_seSlots[seSlot];
@@ -758,6 +765,10 @@ public:
     }
     // fadeIn: 指定秒数で現在のフェードレベルからマスターボリュームまで復帰。
     void fadeIn(float seconds) {
+        // fadeOut(_, Stop/StopAndReset) 中の fadeIn でも完了ゲートが誤発火しない
+        // よう、FadeAction を明示クリアする（#53 横展開: default None の暗黙上書きへ
+        // 依存しない）。
+        m_fadeAction = FadeAction::None;
         if (seconds <= 0.0f) {
             m_fadeAtt = 0;
             m_fading = false;
@@ -774,6 +785,11 @@ public:
     void resetFade() {
         m_fadeAtt = 0;
         m_fading = false;
+        // FadeAction の誤発火を防ぐ（#53）: advanceFade() の完了ゲート
+        //   (!m_fading && m_fadeTargetAtt == 127 && m_fadeAction != None)
+        // が残留状態で発火しないよう、アクションと目標値を明示クリアする。
+        m_fadeAction = FadeAction::None;
+        m_fadeTargetAtt = 0;
         recalcGlobalAtt();
     }
     [[nodiscard]] bool isFading() const { return m_fading; }
@@ -953,7 +969,7 @@ public:
 
 private:
     // ── グローバル減衰（ダッキング内部API）─────────────────
-    void setGlobalAttenuation(int att)
+    void setGlobalAttenuation(int att) noexcept
     {
         m_duckAtt = att;
         recalcGlobalAtt();
@@ -976,10 +992,12 @@ private:
             auto& st = m_channels[ch];
             if (st.events.empty()) continue;
 
-            // KEY_OFF
+            // KEY_OFF（ハイジャック中chはレジスタ操作のみスキップ、簿記は維持: Issue #54）
             if (st.noteOn) {
-                if      (isFM(ch))  fmKeyOff(toFMIndex(ch));
-                else if (isSSG(ch)) ssgKeyOff(toSSGIndex(ch));
+                if (!st.hijacked) {
+                    if      (isFM(ch))  fmKeyOff(toFMIndex(ch));
+                    else if (isSSG(ch)) ssgKeyOff(toSSGIndex(ch));
+                }
                 st.noteOn = false;
             }
 
@@ -1048,10 +1066,12 @@ private:
     {
         auto& st = m_channels[ch];
 
-        // KEY_OFF
+        // KEY_OFF（ハイジャック中chはレジスタ操作のみスキップ、簿記は維持: Issue #54）
         if (st.noteOn) {
-            if      (isFM(ch))  fmKeyOff(toFMIndex(ch));
-            else if (isSSG(ch)) ssgKeyOff(toSSGIndex(ch));
+            if (!st.hijacked) {
+                if      (isFM(ch))  fmKeyOff(toFMIndex(ch));
+                else if (isSSG(ch)) ssgKeyOff(toSSGIndex(ch));
+            }
             st.noteOn = false;
         }
 
@@ -1062,6 +1082,9 @@ private:
         resetChannelRuntime(ch);
 
         // SSGミキサーリセット（このチャンネルがSSGの場合）
+        // 注（Issue #54-D, deferred）: ハイジャック中chでも m_ssgMixer shadow を更新するが、
+        // 真因は「SE側writeReg直叩きが m_ssgMixer shadow を更新しない所有権ギャップ」にあり、
+        // ここをガードするだけでは塞がらないため今回は意図的に手を入れない。
         if (isSSG(ch)) {
             int si = toSSGIndex(ch);
             m_ssgMixer |= (1 << si);       // トーン無効
@@ -1210,7 +1233,11 @@ private:
         int      mmlCh          = -1;      // Classicモード: ハイジャック中のMMLチャンネル (-1=Rich)
         uint32_t durationSamples = 0;      // 自動停止までのサンプル数 (0=手動のみ)
         uint32_t samplesLeft    = 0;       // 残りサンプル数
-        FmPatch  patch;                    // SE再生中の音色（TL再計算用）
+        // SE再生中の音色から必要な値だけを整数で保持する（TL再計算は al のみ使用）。
+        // FmPatch 全体（std::string name を含む）を保持すると、stopSe() の
+        // slot = SeSlot{} がオーディオパス（renderMixed → seTickDuration → stopSe）上で
+        // operator delete を呼びうる（RT-safety 違反）。POD 化して free を排除する（#55）。
+        int      patchAl        = 0;       // アルゴリズム (0-7)。seRecalcVolume の TL再計算用
         int      noteNum        = 0;       // 再生中のノート番号
         int      velocity       = 15;      // ベロシティ (0-15)
         // シーケンス再生（マルチノート + ピッチスイープ）
@@ -1218,7 +1245,6 @@ private:
         std::array<SeSequenceNote, MAX_SEQ_NOTES> seqNotes;  // シーケンスノート配列
         int  seqNoteCount   = 0;    // ノート数
         int  seqCurrentNote = 0;    // 現在再生中のノートインデックス
-        int  seqVelocity    = 15;   // シーケンス全体のベロシティ
         bool isSequence     = false; // シーケンス再生中か
     };
 
@@ -1269,9 +1295,10 @@ private:
     uint32_t    m_fadeSamplesLeft  = 0;     // フェード残りサンプル数
     FadeAction  m_fadeAction       = FadeAction::None;  // フェードアウト完了時の自動アクション
     bool        m_fadeOutDone      = false;              // FadeAction実行済みフラグ（play()でリセット）
-    // ボイス再生＋ダッキング状態マシン（スレッド安全）
-    // ゲームスレッド: playVoice/stopVoice で store/exchange
-    // オーディオスレッド: tickVoiceTimer で CAS 遷移
+    // ボイス再生＋ダッキング状態マシン
+    // 全 mutator（playVoice/stopVoice/tickVoiceTimer/playSe系）は同一オーディオスレッド契約。
+    // atomic は同一スレッド内 store×CAS の処理順非依存のため。lock-free は RT パスで
+    // ロックを踏まないことの保証（クロススレッド安全の主張ではない）。
     std::atomic<VoiceDuckState> m_voiceDuckState{VoiceDuckState::Idle};
     static_assert(std::atomic<VoiceDuckState>::is_always_lock_free,
                   "VoiceDuckState must be lock-free for real-time audio thread");
@@ -1452,6 +1479,14 @@ private:
     void processEvents(int ch, uint32_t tick)
     {
         auto& st = m_channels[ch];
+        // ハイジャック中（SE割り込み中）chへのBGM由来レジスタ書き込みを単一窓口で抑制（Issue #54）。
+        // 主ループ・ループ復帰3経路（per-channel復帰/global復帰/per-channel移行）・tick0処理の
+        // 全呼び出し元がここで保護される。advanceEventsSilentがhijacked中もst.noteOn等の簿記を維持するため、
+        // BGM再生位置の追跡は途切れない。
+        if (st.hijacked) {
+            advanceEventsSilent(ch, tick);
+            return;
+        }
       {
         // チャンネルtick計算: per-channelループモード時はチャンネル固有のtick baseを使用
         // per-channel: chTick = tick - perChTickBase で、loopTick起点にマッピング
@@ -1935,7 +1970,7 @@ private:
     }
 
     // 3成分の合算減衰値を再計算し、全チャンネルのレジスタに即時反映
-    void recalcGlobalAtt()
+    void recalcGlobalAtt() noexcept
     {
         m_globalAtt = std::clamp(m_masterAtt + m_bgmAtt + m_fadeAtt + m_duckAtt, 0, 127);
         if (!m_engine) return;
@@ -2790,7 +2825,7 @@ private:
         slot.allocOrder = m_seAllocCounter++;
         slot.fmIndex = fi;
         slot.mmlCh = bestCh;
-        slot.patch = patch;
+        slot.patchAl = patch.al;
         slot.noteNum = noteNum;
         slot.velocity = velocity;
         slot.durationSamples = (durationMs > 0) ? static_cast<uint32_t>(static_cast<uint64_t>(durationMs) * m_sampleRate / 1000) : 0;
@@ -2816,7 +2851,7 @@ private:
         slot.allocOrder = m_seAllocCounter++;
         slot.fmIndex = fi;
         slot.mmlCh = -1;
-        slot.patch = patch;
+        slot.patchAl = patch.al;
         slot.noteNum = noteNum;
         slot.velocity = velocity;
         slot.durationSamples = (durationMs > 0) ? static_cast<uint32_t>(static_cast<uint64_t>(durationMs) * m_sampleRate / 1000) : 0;
@@ -2880,7 +2915,7 @@ private:
             int tlBase = fmvdatLookup(slot.velocity);
             int tl = std::clamp(tlBase + m_masterAtt + m_seAtt, 0, 127);
             IFmEngine* engine = (m_seMode == SeMode::Rich) ? m_seEngine : m_engine;
-            seWriteCarrierTL(engine, slot.fmIndex, slot.patch.al, tl);
+            seWriteCarrierTL(engine, slot.fmIndex, slot.patchAl, tl);
         }
     }
 

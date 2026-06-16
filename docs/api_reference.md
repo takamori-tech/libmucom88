@@ -317,7 +317,7 @@ struct SeSequenceNote {
 - **Rich**: SEチップのFM 6チャンネルに割り当て。全スロット使用中は最古のSEを停止して再割り当て（oldest策略）
 - **音量**: マスターボリューム（`m_masterAtt`）のみ適用。フェード・ダッキングはBGM専用でSEには影響しない
 - **スロット数**: 最大6（`MAX_SE_SLOTS`）。スロット番号はRichモードではFMインデックスと1:1対応
-- **スレッド安全性**: `playSe()`/`playSeSequence()`はオーディオスレッドから呼ぶこと（`playVoice()`と同じ方針）
+- **スレッド契約**: `playSe()`/`playSeSequence()` を含む全 mutator は `advance()`/`renderMixed()` と同一オーディオスレッド（または外部でオーディオコールバックと相互排他）から呼ぶこと（`playVoice()` と同じ方針）。MmlEngine はスレッドセーフではなく、別スレッドからの呼び出しは未定義（`m_voiceDuckState` の atomic はクロススレッド安全を保証しない）
 
 **SEシーケンス再生:**
 - `playSeSequence()` はマルチノートSEを1つのスロットで再生する。各ノートのdurationMs経過後に自動的に次のノートへ遷移

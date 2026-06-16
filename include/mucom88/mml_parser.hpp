@@ -141,6 +141,15 @@ public:
     static constexpr int WHOLE_TICK = PPQ * 4;     // 全音符  = 128 tick (= C128)
     // MUCOM88の1クロック = 1tick（完全一致）
     static constexpr int CLOCK_TICK = 1;           // ^1 = 1tick = 1クロック
+    // 1ノートの音長tick上限（病的入力DoS対策, Issue #57）。
+    // 全音符=128tick基準で 65535 は数百小節相当。正常曲は遥かに下回るため
+    // 通常曲の境界生成には一切作用せず、untrusted MMLの巨大 ^%N（最大9桁）による
+    // generateTieBoundaries の非有界push / 巨大sortのフリーズを防ぐ閾値。
+    static constexpr uint32_t MAX_NOTE_TICKS = 65535;
+    // 1ノートのタイ/自動分割境界の生成総数・セグメント数・&走査の上限（病的入力DoS完全閉塞, Issue #57 F1）。
+    // 正常ノートは MAX_NOTE_TICKS/127 ≈ 516 が上限で本キャップに達しない。多数の ^%N / & による
+    // 境界本数の非有界増幅（generateTieBoundaries の O(^個数 × 516) 生成・O(セグメント数 × &数) 走査）をここで打ち切る。
+    static constexpr size_t MAX_TIE_BOUNDARIES = 1024;
 
     // トラック文字 → チャンネル番号
     // A=0(FM1), B=1(FM2), C=2(FM3), D=3(FM4), E=4(FM5), F=5(FM6)
@@ -366,6 +375,7 @@ private:
         bool     reverbEnabled  = false; // リバーブON/OFF追跡（パーサー内、^タイ境界判定用）
         bool     reverbQCutOnly = false; // Rm1追跡（パーサー内、^タイ境界判定用）
         std::vector<LoopFrame> loopStack;  // ネストループ用スタック
+        int skippedLoopDepth = 0;          // スタックフルでpushを諦めた[の深度(Issue #59)
     };
 
     std::unordered_map<int, std::string>    m_macros;
@@ -947,7 +957,13 @@ private:
                 lf.breakTick    = 0;
                 lf.breakEvIdx   = 0;
                 lf.volumeAtStart = st.volume; // (/)累積補正用
-                if (st.loopStack.size() >= 16) continue;  // ネスト深度上限
+                if (st.loopStack.size() >= 16) {
+                    // ネスト深度上限: pushは諦めるが、対応する]も無視するため
+                    // スキップ深度を記録してネスト整合を保つ(Issue #59)。
+                    // これをしないと後続の]がparseBracketLoopEndで外側frameを誤popする。
+                    st.skippedLoopDepth++;
+                    continue;
+                }
                 st.loopStack.push_back(lf);
                 break;
             }
@@ -963,6 +979,15 @@ private:
                 break;
             }
             case ']': {
+                // スタックフルでpushしなかった[に対応する]は、frameをpopせず
+                // 読み飛ばす(Issue #59)。']'と直後の繰り返し回数digitだけ消費する。
+                if (st.skippedLoopDepth > 0) {
+                    st.skippedLoopDepth--;
+                    pos++;  // skip ']'
+                    if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
+                        readInt(mml, pos, 2);  // 繰り返し回数を消費（破棄）
+                    break;
+                }
                 parseBracketLoopEnd(mml, pos, ch, st, events);
                 break;
             }
@@ -1656,11 +1681,19 @@ private:
         // ^境界のみでセグメント分割（&境界は自動分割の区切りに使わない）
         std::vector<uint32_t> segPoints;
         segPoints.push_back(0);
-        for (uint32_t b : tieBoundaries) segPoints.push_back(b);
+        // セグメント数（=^境界本数）を上限で打ち切る（#57 F1: 多キャレット増幅の完全閉塞）。
+        for (uint32_t b : tieBoundaries) {
+            if (segPoints.size() >= MAX_TIE_BOUNDARIES) break;
+            segPoints.push_back(b);
+        }
         segPoints.push_back(totalTicks);
+        // &走査コストも上限化（多数の & による O(セグメント数 × &数) 走査を有界化）。
+        const size_t ampN = std::min(ampSegStarts.size(), MAX_TIE_BOUNDARIES);
         // 各セグメント内の127tick超を自動分割
         std::vector<uint32_t> allBoundaries;
         for (size_t s = 0; s + 1 < segPoints.size(); s++) {
+            // 生成境界総数を上限で打ち切る（#57 F1: allBoundaries の非有界増幅を閉塞）。
+            if (allBoundaries.size() >= MAX_TIE_BOUNDARIES) break;
             uint32_t segStart = segPoints[s];
             uint32_t segEnd   = segPoints[s + 1];
             uint32_t segLen   = segEnd - segStart;
@@ -1670,24 +1703,27 @@ private:
             // 自動分割KEY_OFFは1tick以内にKEY_ONで打ち消される。
             // 我々のエンジンには&境界のKEY_ONがないため自動分割は害になる。
             bool hasAmpInSegment = false;
-            for (uint32_t as : ampSegStarts) {
+            for (size_t i = 0; i < ampN; i++) {
+                uint32_t as = ampSegStarts[i];
                 if (as > segStart && as <= segEnd) {
                     hasAmpInSegment = true;
                     break;
                 }
             }
             // Z80: 127tick超のセグメントを127tickずつ分割（&なしの場合のみ）
+            // 病的入力（巨大 ^%N）対策(Issue #57): segLenをMAX_NOTE_TICKSで打ち切り、
+            // 自動分割の本数を有界化する。正常曲のセグ長は遥かに小さく無影響。
             if (!hasAmpInSegment) {
-                uint32_t remain = segLen;
+                uint32_t remain = std::min(segLen, MAX_NOTE_TICKS);
                 uint32_t p = segStart;
-                while (remain > 127) {
+                while (remain > 127 && allBoundaries.size() < MAX_TIE_BOUNDARIES) {
                     p += 127;
                     allBoundaries.push_back(p);
                     remain -= 127;
                 }
             }
             // ^境界は明示的KEY_OFF
-            if (s + 1 < segPoints.size() - 1)
+            if (s + 1 < segPoints.size() - 1 && allBoundaries.size() < MAX_TIE_BOUNDARIES)
                 allBoundaries.push_back(segEnd);
         }
         // 重複除去・ソート
@@ -1826,6 +1862,11 @@ private:
                               collectTieBoundaries ? &tieBoundaries : nullptr,
                               collectTieBoundaries ? &ampSegStarts : nullptr);
         }
+
+        // 病的入力DoS対策(Issue #57): 巨大 ^%N（最大9桁=999,999,999）等で膨れた
+        // 1ノートの音長を現実的上限にクランプ。正常曲は遥かに下回るため無影響だが、
+        // untrusted MMLによる非有界tick・後続tick加算のuint32オーバーフローを防ぐ。
+        if (ticks > MAX_NOTE_TICKS) ticks = MAX_NOTE_TICKS;
 
         // ノート番号（MIDI準拠: C4=60）+ キートランスポーズ
         int noteNum = (st.octave + 1) * 12 + semi + st.transpose;
