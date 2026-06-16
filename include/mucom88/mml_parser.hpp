@@ -1201,19 +1201,21 @@ private:
     {
         pos++;  // skip 'T'
         int bpm = readInt(mml, pos, 120);
-        // BPM → Timer-B値変換
-        // Timer-B period = (256-T) * 16 / fmclock
-        // fmclock = 7987200/2/6/12 = 55466
-        // tick per minute = fmclock / 16 / (256-T)
-        // BPM = tick_per_min / PPQ_quarter
-        // ここで PPQ_quarter = wholeTick/4 (C128の場合32)
-        // T = 256 - fmclock / (16 * BPM * PPQ_quarter / 60)
-        // T = 256 - 60 * fmclock / (16 * BPM * PPQ_quarter)
-        static constexpr int FMCLOCK_INT = 7987200 / 2 / 6 / 12;  // 55466
-        int ppqQ = st.wholeTick / 4;  // 4分音符あたりのクロック数
-        if (ppqQ <= 0) ppqQ = 32;
-        if (bpm <= 0) bpm = 120;
-        int tb = 256 - static_cast<int>(60.0 * FMCLOCK_INT / (16.0 * bpm * ppqQ));
+        if (bpm <= 0) return;
+
+        // BPM → Timer-B値変換（Z80 SETTMP muc88.asm の整数手順）
+        int clk = st.wholeTick;
+        if (clk <= 0) clk = WHOLE_TICK;
+        const int l = clk / 4;
+        int tl = (l * (bpm & 0xFF)) & 0xFFFF;
+        if (tl <= 0) tl = 1;
+
+        int bc = 0;
+        for (int rem = 60000; rem >= 0; rem -= tl) ++bc;
+        const int sec = bc & 0xFF;
+        const int val = (346 * sec) & 0xFFFF;
+        const int negval = (val >= 25600) ? 100 : (25600 - val);
+        int tb = negval / 100;
         tb = std::clamp(tb, 0, 255);
         st.tempo = tb;
         MmlEvent ev{};
