@@ -2197,7 +2197,9 @@ private:
                                   st.csm.detune[2] == 0 && st.csm.detune[3] == 0);
                 break;
             case MmlEventType::REVERB_ENVELOPE:
-                st.reverb.value = ev.value; st.reverb.enabled = true; break;
+                st.reverb.value = ev.value; st.reverb.enabled = true;
+                if (isSSG(ch)) st.ssgEnv.rr = ev.value;  // Z80 IX+17 共有 (R↔RR)
+                break;
             case MmlEventType::REVERB_SWITCH:
                 st.reverb.enabled = (ev.value != 0); break;
             case MmlEventType::REVERB_MODE:
@@ -2207,6 +2209,7 @@ private:
                 st.ssgEnv.al = ev.envAL; st.ssgEnv.ar = ev.envAR;
                 st.ssgEnv.dr = ev.envDR; st.ssgEnv.sl = ev.envSL;
                 st.ssgEnv.sr = ev.envSR; st.ssgEnv.rr = ev.envRR;
+                if (isSSG(ch)) st.reverb.value = ev.envRR;  // Z80 IX+17 共有 (RR↔R)
                 break;
             default: break;
             }
