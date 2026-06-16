@@ -2408,6 +2408,13 @@ private:
                                : st.detune + st.lfo.pitchOffset;
         if      (isFM(ch))  fmUpdateFreq(toFMIndex(ch), st.currentNote, offset);
         else if (isSSG(ch)) ssgUpdateFreq(toSSGIndex(ch), st.currentNote, offset);
+        else if (isADPCMB(ch) && m_engine) {
+            // Z80 FD2 PCM分岐(music.asm:1308-1325): ノート保持中の D 命令で delta-N を
+            // 再計算し reg 0x09/0x0A をライブ再書込する（detune は adpcmbNoteToDeltaN 内で加算）(#71)
+            uint16_t dn = adpcmbNoteToDeltaN(st.currentNote);
+            m_engine->writeReg(1, 0x09, static_cast<uint8_t>(dn & 0xFF));
+            m_engine->writeReg(1, 0x0A, static_cast<uint8_t>(dn >> 8));
+        }
     }
 
     // ── FM 周波数書き込み（オフセット付き）─────────────
@@ -2738,9 +2745,13 @@ private:
         noteNum = std::clamp(noteNum, 0, 127);
         int semi    = noteNum % 12;
         int shift   = noteNum / 12 - 2;  // o1 = shift 0
-        uint32_t dn = PCMNMB[semi];
+        // Z80 PCMGFQ(music.asm:584-603): base delta-N(PCMNMB[semi]) に D命令デチューン
+        // (IX+9/10) を ADD HL,DE で加算してから ASUB7 で octave 右シフトする
+        // → 実効 = (PCMNMB + detune) >> shift。Kトラックの D 命令再現 (#71)。
+        int32_t dn = static_cast<int32_t>(PCMNMB[semi]) + m_channels[10].detune;
+        if (dn < 0) dn = 0;
         if (shift > 0) dn >>= shift;
-        return static_cast<uint16_t>(dn & 0xFFFF);
+        return static_cast<uint16_t>(static_cast<uint32_t>(dn) & 0xFFFF);
     }
 
     int adpcmbEffectiveVolume(int vol) const noexcept
