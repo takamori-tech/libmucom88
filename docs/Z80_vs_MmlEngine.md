@@ -117,7 +117,7 @@ YM2608 レジスタ書き込み (fmgen直接呼び出し)
 | **パラメータ** | M delay,rate,depth,count | 同一(MmlEvent::vibDelay/Rate/Depth/Count) |
 | **ML(振幅変更)** | IX+25/26 振幅値を変更 | 同一(LFO_PARAMイベント, #37クローズ済み) |
 | **MC(レート変更)** | IX+21 クロック単位を変更 | 同一(LFO_PARAMイベント, #38クローズ済み) |
-| **ピッチ反映** | SSG: 0x00+ch, FM: 0xA4+ch | 同一(updatePitch→ssgWriteFreq/fmWriteFreq) |
+| **ピッチ反映** | SSG: 0x00+ch, FM: 0xA4+ch | FMは同一。SSGはZ80が深さを >>octave 縮小(SNUMGETL)するのに対し旧実装は1:1適用で高octaveで過大だった → libmucom88#63で修正(2026-06-16) |
 | **SSGプリセットLFO** | @N適用時にM全パラメータ設定 | 同一(Issue #43で修正) |
 
 ---
@@ -391,6 +391,7 @@ MmlEngineでは:
 - **再現不要**: ESC_PRC, CUE, CHK, TIME/PTIME/TSC, WKGET/PUTWK（ハードウェア/UI/メモリ管理）
 - **アーキテクチャ差**: ブラケットループ（Z80: ランタイム展開 / MmlParser: 静的展開）→ 結果は同一
 - **regtest確認**: 132曲 Mean=1.011, Median=1.001, >=0.8=132(100%)
+- **2026-06-16 senior-architect 層A再検証**: 上記「全照合完了/未実装なし」は楽観的だった。Z80 asm↔C++ の敵対的再照合で**実差異16件**を検出し libmucom88#61-70 で修正(echo履歴/テンポ整数変換/SSG LFO octave縮小/ポルタメントoctave跨ぎ・SSG SNUMB/音量オーバーフロー巻戻し/K-k transpose分離/SSG R-RR共有/ADPCM音量・PCMテーブル/LFO MLリセット)。端ケースの多くは regtest非カバーで緑は傍証(手動 muc_compare 検証推奨)。
 
 ---
 
@@ -398,6 +399,7 @@ MmlEngineでは:
 
 | 日付 | Issue | 内容 |
 |------|-------|------|
+| 2026-06-16 | libmucom88 #61-70 | senior-architect 層A静的検証(並列Opus+敵対的検証)で Z80非再現 実差異16件を検出・修正。#64 ポルタメントは同一octaveでも Z80 CULC 反復ratio乗算により ±1 LSB差(退行でなくZ80忠実化)。別途 dosburger 間欠非決定性(pre-existing/未初期化メモリ疑い)を mucom88v#256 に起票 |
 | 2026-04-09 | #72 | ADPCM-B pコマンド（パン設定）のdoSetPan()対応。Z80 STEREOルーチンのPCMLR設定と互換。m_pcmPan = panToReg(pan)追加 |
 | 2026-04-08 | #71 | per-channel初回移行時の累積ドリフト修正。イベント消費済みチャンネルのnextRestartTick未設定+perChTickBase 1tickズレ。iw_digicharat-partynight 600sec: avgRMS 1.012→1.002, keyOn差 226→1 |
 | 2026-04-08 | #70 | %N(SETDCO)をZ80互換COUNT設定に修正。st.tick直接加算→defLen/defLenIsClock設定。directTicksパスの^/&ドット処理追加。レストハンドラのdefLenIsClockチェック追加。stk023: 5.031→1.019。残存600tick差はZ80コンパイラバグ（SETLPE breakTick==0誤判定、T_CLKのみ影響、ランタイム再生は正常）。regtest Mean: 0.999, Max: 1.078 |
@@ -434,5 +436,5 @@ MmlEngineでは:
 
 ---
 
-*最終更新: 2026-04-09 (session 51, Issue #81 全ルーチン照合)*
+*最終更新: 2026-06-16 (senior-architect 層A検証, libmucom88#61-70 修正)*
 *更新者: Claude (Anthropic) + takamori-tech*
