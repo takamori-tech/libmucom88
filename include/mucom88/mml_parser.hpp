@@ -361,7 +361,8 @@ private:
         int      pan       = 3;
         int      staccato  = 0;   // q: 0=レガート（MUCOM88デフォルト）
         int      detune    = 0;   // D: デチューン（F-Numberオフセット）
-        int      transpose = 0;   // k: キートランスポーズ（半音単位）
+        int      transposeAbs = 0; // K: 絶対キートランスポーズ（半音単位）
+        int      transposeRel = 0; // k: 相対キートランスポーズ（半音単位）
         bool     defLenIsClock = false; // l%N指定時: defLenがクロック値
         uint32_t tick      = 0;
         int      wholeTick = WHOLE_TICK; // Cコマンドで変更可能（デフォルトC128=128）
@@ -704,10 +705,10 @@ private:
                 int trans = 0;
                 if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     trans = readInt(mml, pos, 0);
-                st.transpose = trans;
+                st.transposeAbs = trans;
                 MmlEvent ev{};
                 ev.type = MmlEventType::KEY_TRANSPOSE;
-                ev.tick = st.tick; ev.value = trans; ev.channel = ch;
+                ev.tick = st.tick; ev.value = st.transposeAbs + st.transposeRel; ev.channel = ch;
                 events.push_back(ev);
                 continue;
             }
@@ -1075,10 +1076,10 @@ private:
                 int trans = 0;
                 if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                     trans = readInt(mml, pos, 0);
-                st.transpose += trans;  // 相対: 現在値に加算
+                st.transposeRel = trans;  // Z80 SIFTDA2: kは絶対代入
                 MmlEvent ev{};
                 ev.type = MmlEventType::KEY_TRANSPOSE;
-                ev.tick = st.tick; ev.value = trans; ev.channel = ch;
+                ev.tick = st.tick; ev.value = st.transposeAbs + st.transposeRel; ev.channel = ch;
                 events.push_back(ev);
                 break;
             }
@@ -1497,7 +1498,7 @@ private:
                     if (sc == '+' || sc == '#') { semi++; pos++; }
                     else if (sc == '-')          { semi--; pos++; }
                 }
-                endNote = (st.octave + 1) * 12 + semi + st.transpose;
+                endNote = (st.octave + 1) * 12 + semi + transposeTotal(st);
                 endNote = std::clamp(endNote, 0, 127);
             }
         }
@@ -1888,7 +1889,7 @@ private:
         if (ticks > MAX_NOTE_TICKS) ticks = MAX_NOTE_TICKS;
 
         // ノート番号（MIDI準拠: C4=60）+ キートランスポーズ
-        int noteNum = (st.octave + 1) * 12 + semi + st.transpose;
+        int noteNum = (st.octave + 1) * 12 + semi + transposeTotal(st);
         noteNum = std::clamp(noteNum, 0, 127);
 
         // タイ継続中（前の行末の&から続くノート）の場合:
@@ -1992,6 +1993,7 @@ private:
     // FMチャンネル判定（MmlEngine::isFMと同一）
     static bool isFMChannel(int ch) { return ch <= 2 || (ch >= 7 && ch <= 9); }
     static bool isSSGChannel(int ch) { return ch >= 3 && ch <= 5; }
+    static int transposeTotal(const State& st) { return st.transposeAbs + st.transposeRel; }
 
     static int ssgVolUp(int curVol, int signedDelta)
     {
