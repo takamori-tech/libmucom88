@@ -2652,22 +2652,21 @@ public:
         size_t infoSize = 0x400;
         (void)(size - infoSize);  // pcmSize: 今後のバリデーション用に予約
 
-        // PCMADRテーブル構築
-        m_pcmVoiceCount = 0;
+        // PCMADRテーブル構築。Z80は空エントリも8バイトスロットを保持する。
+        m_pcmVoiceCount = MAX_PCM_VOICES;
         for (int i = 0; i < MAX_PCM_VOICES; i++) {
             const uint8_t* ent = data + i * 32;
-            // 名前が空（最初のバイトが0）ならスキップ
-            if (ent[0] == 0) continue;
+            if (ent[0] == 0) {
+                m_pcmTable[i] = PcmVoiceEntry{};
+                continue;
+            }
             uint16_t startAddr = ent[28] | (ent[29] << 8);
             uint16_t length    = ent[30] | (ent[31] << 8);
             uint16_t param     = ent[26] | (ent[27] << 8);
             uint16_t endAddr   = startAddr + (length >> 2);  // mucomvm.cpp互換
-            if (m_pcmVoiceCount < MAX_PCM_VOICES) {
-                m_pcmTable[m_pcmVoiceCount].startAddr = startAddr;
-                m_pcmTable[m_pcmVoiceCount].endAddr   = endAddr;
-                m_pcmTable[m_pcmVoiceCount].param     = param;
-                m_pcmVoiceCount++;
-            }
+            m_pcmTable[i].startAddr = startAddr;
+            m_pcmTable[i].endAddr   = endAddr;
+            m_pcmTable[i].param     = param;
         }
 
         // PCMデータのfmgenバッファへのロードは呼び出し側で行う
@@ -2726,8 +2725,16 @@ private:
         int shift   = noteNum / 12 - 2;  // o1 = shift 0
         uint32_t dn = PCMNMB[semi];
         if (shift > 0) dn >>= shift;
-        else if (shift < 0) dn <<= (-shift);  // o1より高いオクターブ
         return static_cast<uint16_t>(dn & 0xFFFF);
+    }
+
+    int adpcmbEffectiveVolume(int vol) const noexcept
+    {
+        int base = vol - m_globalAtt * 2;
+        if (base < 0) base = 0;
+        else if (base >= 250) base = 0;  // Z80 PLAY: CP 250; JR C; XOR A
+        if (m_pcmVolMode != 0) base += m_pcmAddVol;
+        return base;
     }
 
     void adpcmbKeyOn(int noteNum)
@@ -2740,13 +2747,7 @@ private:
         auto& pcm = m_pcmLoaded ? m_pcmTable[idx] : defaultPcm;
 
         uint16_t deltaN = adpcmbNoteToDeltaN(noteNum);
-        int vol = m_channels[10].volume;
-        // ADPCM-B vol register: 0=silent, 255=max。減衰はvolから減算。
-        // m_globalAtt(0-127) → ADPCM-B scale: *2 (127*2=254 ≈ フルレンジ)
-        int finalVol = vol - m_globalAtt * 2;
-        if (m_pcmVolMode != 0) finalVol += m_pcmAddVol;
-        if (finalVol > 250) finalVol = 250;
-        if (finalVol < 0) finalVol = 0;
+        int finalVol = adpcmbEffectiveVolume(m_channels[10].volume);
 
         // Z80 PLAY register sequence (port 1)
         m_engine->writeReg(1, 0x0B, 0x00);              // mute
@@ -2774,11 +2775,7 @@ private:
     void adpcmbSetVolume(int vol)
     {
         if (!m_engine) return;
-        // ADPCM-B vol register: 0=silent, 255=max。減衰はvolから減算。
-        int finalVol = vol - m_globalAtt * 2;
-        if (m_pcmVolMode != 0) finalVol += m_pcmAddVol;
-        if (finalVol > 250) finalVol = 250;
-        if (finalVol < 0) finalVol = 0;
+        int finalVol = adpcmbEffectiveVolume(vol);
         m_engine->writeReg(1, 0x0B, static_cast<uint8_t>(finalVol));
     }
 
