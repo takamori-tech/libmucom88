@@ -144,7 +144,7 @@ YM2608 レジスタ書き込み (fmgen直接呼び出し)
 | **ADPCM-B(Kトラック)** | PCMADR+PCMNMBデルタN計算 | 同一 |
 | **PVMODE(V1)** | IX+6(baseVol)/IX+7(addVol)切替 | 同一(m_pcmVolMode/m_pcmAddVol) |
 | **delta-N計算** | PCMNMBテーブル+Z80オフセット | 同一(adpcmbNoteToDeltaN) |
-| **ADPCM-Bボリューム** | STV4→STV1: IX+6=user_vol（+4なし）, PLAY: TOTALV*4+IX+6 | 同一（+4不要と判明、Issue #18クローズ） |
+| **ADPCM-Bボリューム** | STV4→STV1: IX+6=(TV_OFS+v+4)&0xFF（COMNOW=10もFMと同一+4分岐, muc88.asm:2841-2847）, PLAY: TOTALV*4+IX+6, CP250でミュート | 同一（+4/TV_OFS適用、ミュート境界v≥246、Fix #74。FMはFMVDAT[v+4]で吸収するがADPCM-Bはreg0x0Bへ生加算） |
 | **ADPCM-Bパン** | STEREOルーチン: PCMFLG!=0→PCMLR変数に格納, PLAYでreg 0x01に書込 | 同一(doSetPan ADPCM-B分岐, Issue #72で修正) |
 | **ADPCM-Aパン** | STE2: 楽器単位のIL(0x18-0x1D) PAN bit6-7, p $NNで設定 | 同一(doSetPan リズム分岐, m_rhythmIL) |
 
@@ -221,7 +221,7 @@ MmlEngineでは:
 
 | 項目 | 影響 | 状態 | Issue |
 |---|---|---|---|
-| ~~ADPCM-B PVMODE+4ボリューム補正~~ | ~~+4不要と判明（STV4→STV1パスは+4加算なし）~~ | **クローズ（修正不要）** | #18 |
+| ADPCM-B(K) +4/TV_OFSボリューム補正 | parser ch10がraw vを格納し+4/TV_OFS未適用。Z80 STV1のNC分岐(COMNOW=10)を通るため+4必要（旧#18の「不要」判定はasm誤読） | **修正済み（regtest 44曲改善方向）** | #74 |
 | ~~ML(LFO振幅変更)コマンド~~ | ~~LFO depth個別変更~~ | **実装済み(クローズ)** | #37 |
 | ~~MC(LFOレート変更)コマンド~~ | ~~LFO rate個別変更~~ | **実装済み(クローズ)** | #38 |
 | ~~FMタイ判定の差異~~ | ~~タイ時KEY_OFFスキップ~~ | **再修正済み（同音スキップ削除）** | #44 |
@@ -416,7 +416,8 @@ MmlEngineでは:
 | 2026-04-07 | #54 | ブラケットループ内v+(/）累積修正（vコマンドありのループでvolDelta=0）|
 | 2026-04-07 | #51 | ブラケットループ内(/)ボリューム累積修正（volDelta補正追加）|
 | 2026-04-07 | #49 | FM reverb FS2: IX+6の+4補正追加（SETVOL加算分）|
-| 2026-04-07 | #18 | ADPCM-B PVMODE+4: STV4→STV1パスは+4加算なしと判明、修正不要でクローズ |
+| 2026-04-07 | #18 | ADPCM-B PVMODE+4: 「+4加算なし」と判断しクローズ（→2026-06-17 #74で誤りと判明、+4必要） |
+| 2026-06-17 | #74 | ADPCM-B(K) v命令に+4/TV_OFS適用（(v+TV_OFS+4)&0xFF 8bit wrap）。COMNOW=10もFM同様STV1のNC→+4分岐。旧#18のクローズはasm誤読。regtest 44曲変化(24改善/20は非Kラウドネス露呈)、Mean0.996→1.003、>=0.8=127/127維持 |
 | 2026-04-07 | #45 | \\エコー(SETBEF)のtick計算: staccato適用後duration→フル音長(BEFCO互換) |
 | 2026-04-07 | #48 | FM reverb FS2: FMVDAT直接参照(STV2経由, TOTALV加算なし) + 定数TL書き込み |
 | 2026-04-06 | #47 | V(TV_OFS) Total Volume Offset実装（SSG/FM vコマンドにオフセット加算） |
