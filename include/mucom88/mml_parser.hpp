@@ -403,7 +403,25 @@ private:
     // voice.dat から音色名で検索（@"name" コマンド用）
     // MUCOM88 Z80コンパイラのSRCHPCM相当: name[6]フィールドをバイト列比較
     // 戻り値: 見つかった場合は音色番号(0-255)、見つからない場合は-1
+    //
+    // エンコーディング両対応(#77): MMLが Shift-JIS 母体(PC-8801由来)でも、
+    // UTF-8 保存(OpenMUCOM88 onitama/mucom88 #15 の方針)でも音色名を解決する。
+    //   Pass 1: 生バイト一致（Shift-JIS 母体MMLをそのまま解決＝従来挙動を完全保存）
+    //   Pass 2: Pass 1 失敗時のみ、MML名の UTF-8 半角カナ(U+FF61-U+FF9F)を
+    //           Shift-JIS 単バイト(0xA1-0xDF)へ正規化して再照合
+    //           （voice.dat 名前フィールドは Shift-JIS 格納のため）
     [[nodiscard]] int findPatchByName(const std::string& name) const
+    {
+        int hit = findPatchByNameRaw(name);
+        if (hit >= 0) return hit;
+        // Pass 2: UTF-8 半角カナを Shift-JIS へ正規化して再照合（変化が無ければ探索不要）
+        std::string sjis = utf8HalfKanaToSjis(name);
+        if (sjis != name) return findPatchByNameRaw(sjis);
+        return -1;
+    }
+
+    // voice.dat 名前(byte26-31, 末尾0x20/0x00トリム)を生バイト一致で線形検索（内部ヘルパ）
+    [[nodiscard]] int findPatchByNameRaw(const std::string& name) const
     {
         if (m_voiceDat.size() < 32) return -1;
         int maxPatch = static_cast<int>(m_voiceDat.size() / 32);
@@ -420,6 +438,36 @@ private:
             if (entryName == name) return i;
         }
         return -1;
+    }
+
+    // UTF-8 半角カナ(U+FF61-U+FF9F, 3byte EF BD A1..EF BE 9F)を Shift-JIS 単バイト
+    // (0xA1-0xDF)へ正規化する（内部ヘルパ）。ASCII はそのまま、それ以外のバイト列は
+    // best-effort で保持する。音色名照合(#77)用途であり完全な UTF-8→Shift-JIS 変換ではない
+    // （voice.dat の音色名で実際に使われる半角カナ＋ASCII を対象とする）。
+    [[nodiscard]] static std::string utf8HalfKanaToSjis(const std::string& s)
+    {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size();) {
+            const unsigned char c = static_cast<unsigned char>(s[i]);
+            if (c == 0xEF && i + 2 < s.size()) {
+                const unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+                const unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+                // 3byte UTF-8 をデコードし U+FF61-U+FF9F なら Shift-JIS 半角カナへ
+                const unsigned int cp =
+                    (static_cast<unsigned int>(c & 0x0F) << 12) |
+                    (static_cast<unsigned int>(c1 & 0x3F) << 6) |
+                    static_cast<unsigned int>(c2 & 0x3F);
+                if (cp >= 0xFF61 && cp <= 0xFF9F) {
+                    out += static_cast<char>(static_cast<unsigned char>(cp - 0xFF61 + 0xA1));
+                    i += 3;
+                    continue;
+                }
+            }
+            out += s[i];
+            i += 1;
+        }
+        return out;
     }
 
     // ==========================================================================

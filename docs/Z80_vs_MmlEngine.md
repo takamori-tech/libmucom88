@@ -159,7 +159,7 @@ YM2608 レジスタ書き込み (fmgen直接呼び出し)
 | **曲長統一** | パディングなし（各チャンネル独立ループ） | per-channel独立ループ（endTickで即時リスタート、Issue #68で修正） |
 | **yXXコマンド** | SETR4: slot 1-based(1-4), SETR8: +COMNOW(ch offset) | 同一(Issue #59で修正: slot-1, portBase+chOff) |
 | **マクロ** | `*N{}`をコンパイル時展開 | collectMacros→expandMacros(同一) |
-| **@"string"** | voice.dat name[6]検索→番号解決 | findPatchByName(Issue #42で実装) |
+| **@"string"** | voice.dat name[6]検索→番号解決（OpenMUCOM88 onitama/mucom88 #15以降は UTF-8 MML を期待） | findPatchByName(Issue #42)。Shift-JIS母体MMLとUTF-8半角カナの両エンコーディングで解決(#77) |
 | **V(TV_OFS)** | コンパイル時ボリュームオフセット(SSG: v+V, FM: v+V+4) | 同一(tvOffset, Issue #47で修正) |
 | **\エコー(SETBEF)** | STBF3: 0xFB(-M) + BEFCO(フル音長) + BEFTONE[N] + 0xFB(+M) | 同一(lastFullTicks, Issue #45で修正。FM VOLUPFクランプなし, Issue #58) |
 | **\=N,M スコープ** | BFDAT/VDDATはグローバル変数（全チャンネル共有） | 同一(m_echoBufIdx/m_echoVolRedはMmlParserクラスメンバー, Issue #64で修正) |
@@ -399,6 +399,7 @@ MmlEngineでは:
 
 | 日付 | Issue | 内容 |
 |------|-------|------|
+| 2026-06-17 | #77 | @"name" 音色名解決を Shift-JIS/UTF-8 両対応化（findPatchByName: Pass1=生バイト一致で従来Shift-JIS挙動を完全保存、Pass2=UTF-8半角カナU+FF61-FF9F→Shift-JIS 0xA1-0xDF正規化して再照合）。OpenMUCOM88 onitama/mucom88 #15(CLOSED)で参照コンパイラが UTF-8 MML を期待することが判明。実曲5件(ACTRAISER/BARE1/BARE2)は libmucom88 では従来から Shift-JIS で正しく再生可・参照側のみ UTF-8 必須だった。サウンドドライバ(music.asm)再現とは無関係のパーサ層エンコーディング差。regtest 127/127維持 |
 | 2026-06-16 | libmucom88 #61-70 | senior-architect 層A静的検証(並列Opus+敵対的検証)で Z80非再現 実差異16件を検出・修正。#64 ポルタメントは同一octaveでも Z80 CULC 反復ratio乗算により ±1 LSB差(退行でなくZ80忠実化)。別途 dosburger 間欠非決定性(pre-existing/未初期化メモリ疑い)を mucom88v#256 に起票 |
 | 2026-04-09 | #72 | ADPCM-B pコマンド（パン設定）のdoSetPan()対応。Z80 STEREOルーチンのPCMLR設定と互換。m_pcmPan = panToReg(pan)追加 |
 | 2026-04-08 | #71 | per-channel初回移行時の累積ドリフト修正。イベント消費済みチャンネルのnextRestartTick未設定+perChTickBase 1tickズレ。iw_digicharat-partynight 600sec: avgRMS 1.012→1.002, keyOn差 226→1 |
