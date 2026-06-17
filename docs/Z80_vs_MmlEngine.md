@@ -146,7 +146,7 @@ YM2608 レジスタ書き込み (fmgen直接呼び出し)
 | **delta-N計算** | PCMNMBテーブル+Z80オフセット | 同一(adpcmbNoteToDeltaN) |
 | **ADPCM-Bボリューム** | STV4→STV1: IX+6=(TV_OFS+v+4)&0xFF（COMNOW=10もFMと同一+4分岐, muc88.asm:2841-2847）, PLAY: TOTALV*4+IX+6, CP250でミュート | 同一（+4/TV_OFS適用、ミュート境界v≥246、Fix #74。FMはFMVDAT[v+4]で吸収するがADPCM-Bはreg0x0Bへ生加算） |
 | **ADPCM-Bパン** | STEREOルーチン: PCMFLG!=0→PCMLR変数に格納, PLAYでreg 0x01に書込 | 同一(doSetPan ADPCM-B分岐, Issue #72で修正) |
-| **ADPCM-Aパン** | STE2: 楽器単位のIL(0x18-0x1D) PAN bit6-7, p $NNで設定 | 同一(doSetPan リズム分岐, m_rhythmIL) |
+| **ADPCM-Aパン** | STE2: 楽器単位のIL(0x18-0x1D) PAN bit6-7, p $NNで設定。VOLDR2: v個別音量はpan保持(AND 11000000B OR level) | 同一(p=doSetPan即時書込, v=RHYTHM_LEVELでpan保持RMW; #75でvのpan破壊を修正) |
 
 ---
 
@@ -316,7 +316,7 @@ MmlEngineでは:
 | OTODRM | リズム音色設定 | doSetPatch(rhythm) | ✅ 実装済み |
 | **パン** ||||
 | STEREO/STER2 | FM/SSGパン設定 | doSetPan(FM) | ✅ 実装済み |
-| STE2 | ADPCM-A パン(IL bit6-7) | doSetPan(rhythm) + m_rhythmIL | ✅ 実装済み |
+| STE2 | ADPCM-A パン(IL bit6-7) | doSetPan(rhythm)即時書込 + RHYTHM_LEVEL(pan保持RMW) | ✅ 修正済み(#75: vのpan破壊を修正) |
 | STEREO(PCM) | ADPCM-Bパン (PCMLR) | doSetPan(ADPCM-B) | ✅ 修正済み(#72) |
 | **テンポ・タイマー** ||||
 | STTMB/STTMB2 | Timer-B設定 | recalcTimerB() | ✅ 実装済み |
