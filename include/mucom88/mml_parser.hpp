@@ -86,6 +86,7 @@ enum class MmlEventType {
     VIBRATO_SWITCH, // ソフトウェアLFO ON/OFF（MF0/MF1）
     LOOP_POINT, // ループポイント（L コマンド: ループ再開位置）
     REG_WRITE,  // 直接レジスタ書き込み（y コマンド: addr=value, data=value2）
+    RHYTHM_LEVEL, // リズム個別音量（v の n2-n7: note=楽器idx 0-5, value=level 0-31）。Z80 VOLDR2 互換でpan保持RMW
     KEY_TRANSPOSE, // キートランスポーズ（k コマンド: 全ノートを N 半音シフト）
     SSG_ENVELOPE,  // SSGソフトウェアエンベロープ（E コマンド: AL,AR,DR,SR,SL,RR）
     REVERB_ENVELOPE, // リバーブ音量加減値（R コマンド: value=加減値）
@@ -822,18 +823,19 @@ private:
                     // リズムチャンネル: v n1,n2,n3,n4,n5,n6,n7
                     // n1=全体(0-63), n2-n7=BD,SD,CY,HH,TM,RS個別(0-31)
                     st.volume = std::clamp(readInt(mml, pos, 60), 0, 63);
-                    // 個別音量をREG_WRITEイベントとして出力（0x18-0x1D）
-                    // MUCOM88 Z80ドライバーはv個別音量をPAN込みでレジスタに書く
+                    // 個別音量を RHYTHM_LEVEL イベントとして出力（楽器idx 0-5, level 0-31）
+                    // Z80 VOLDR2(music.asm:1237-1242): A=DRMVOL[i] & 11000000B(pan保持) OR level。
+                    // pan(0xC0)を埋め込まず level のみ運び、エンジン側で IL の下位5bitだけ更新する（#75）
                     for (int ri = 0; ri < 6 && pos < mml.size() && mml[pos] == ','; ri++) {
                         pos++;
                         int ilevel = 0;
                         if (pos < mml.size() && (std::isdigit(static_cast<unsigned char>(mml[pos])) || mml[pos] == '-'))
                             ilevel = std::clamp(readInt(mml, pos, 0), 0, 31);
                         MmlEvent rw{};
-                        rw.type = MmlEventType::REG_WRITE;
+                        rw.type = MmlEventType::RHYTHM_LEVEL;
                         rw.tick = st.tick; rw.channel = ch;
-                        rw.note = 0x18 + ri;
-                        rw.value = 0xC0 | (ilevel & 0x1F);  // L+R + level
+                        rw.note = ri;                  // 楽器インデックス 0-5
+                        rw.value = ilevel & 0x1F;      // レベルのみ（pan は保持）
                         events.push_back(rw);
                     }
                 } else if (ch == 10) {

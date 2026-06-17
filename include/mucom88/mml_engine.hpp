@@ -1429,6 +1429,17 @@ private:
         }
     }
 
+    // ── RHYTHM_LEVELイベント処理（リズム個別音量 v の n2-n7）─────────
+    // Z80 VOLDR2(music.asm:1237-1242): A = DRMVOL[i] & 11000000B(pan保持) OR level → PSGOUTで即時書き込み。
+    // IL レジスタ(0x18-0x1D)の下位5bit(level)のみ更新し、上位2bit(pan)は p コマンドの設定を保持する（#75）。
+    void handleRhythmLevel(const MmlEvent& ev)
+    {
+        int inst = ev.note & 0x07;
+        if (inst >= 6) return;
+        m_rhythmIL[inst] = static_cast<uint8_t>((m_rhythmIL[inst] & 0xC0) | (ev.value & 0x1F));
+        if (m_engine) m_engine->writeReg(0, static_cast<uint8_t>(0x18 + inst), m_rhythmIL[inst]);
+    }
+
     // ── PORTAMENTOイベント処理 ───────────────────────────
     void handlePortamento(int ch, ChannelState& st, const MmlEvent& ev)
     {
@@ -1652,6 +1663,9 @@ private:
             case MmlEventType::REG_WRITE:
                 handleRegWrite(ch, st, ev);
                 break;
+            case MmlEventType::RHYTHM_LEVEL:
+                handleRhythmLevel(ev);
+                break;
             case MmlEventType::KEY_TRANSPOSE:
                 break;
             case MmlEventType::SSG_ENVELOPE:
@@ -1865,8 +1879,10 @@ private:
             int inst = pan & 0x0F;
             int lr   = (pan >> 4) & 0x03;
             if (inst < 6) {
-                // ILレジスタのPANビットのみ更新（レベルは保持）
+                // ILレジスタのPANビットのみ更新（レベルは保持）。Z80 STE2(music.asm:975-1003)は
+                // PSGOUT で即時に reg(0x18+i) へ書き込むため、ここでも即時反映する（#75）
                 m_rhythmIL[inst] = static_cast<uint8_t>((lr << 6) | (m_rhythmIL[inst] & 0x1F));
+                if (m_engine) m_engine->writeReg(0, static_cast<uint8_t>(0x18 + inst), m_rhythmIL[inst]);
             }
         }
     }
