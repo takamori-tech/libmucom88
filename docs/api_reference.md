@@ -58,8 +58,11 @@ constexpr bool kFmCarrier[8][4] = { /* AL0-7 */ };
 enum class ChipMode { OPNA, OPM, OPNB };
 ```
 
+トップレベルの正準 `ChipMode` は `include/mucom88/chip_backend_interface.hpp` で定義。
 MUCファイルの `#mode` ディレクティブで指定。
 現時点では `OPNA` が標準。OPM/OPNB は将来のG2モード用。
+
+`MmlParser::ChipMode`（`mml_parser.hpp` のネスト型）は、`#mode` ディレクティブの解析結果として parser が内部で使う同値だが別の型。
 
 ---
 
