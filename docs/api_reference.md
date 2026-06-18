@@ -66,6 +66,14 @@ MUCファイルの `#mode` ディレクティブで指定。
 
 ---
 
+## ChannelMaskSpec
+
+論理チャンネル可聴指定 POD。audible=1 セマンティクス。
+チップ固有の mute polarity / bit 配置への変換は利用側 backend が行い、本型はチップ非依存。
+デフォルト構築および `ChannelMaskSpec::allAudible()` は全チャンネル可聴。
+
+---
+
 ## PatchSource
 
 ```cpp
