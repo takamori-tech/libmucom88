@@ -5,7 +5,6 @@
 //
 // Phase3 で段階的にチップバックエンド抽象を追加していく。
 // 現時点では ChipMode / ChannelMaskSpec を共有定義する。
-// IChipBackend クラスは後続段で追加する。
 //
 // エミュレータ実装に依存しない公開ヘッダとして、fmgen 等は include しない。
 // =============================================================================
@@ -14,14 +13,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <cstddef>
 
 // =============================================================================
 // ChipMode: 対象チップ種別
 //
 // 値は mucom88v の chipModeToIndex() と m_modeFiles[] のインデックスとして使うため、
 // OPNA=0 / OPM=1 / OPNB=2 の順序を変更してはいけない。
-//
-// IChipBackend クラスは後続段で追加する。
 // =============================================================================
 enum class ChipMode {
     OPNA = 0,   // YM2608
@@ -50,4 +48,37 @@ struct ChannelMaskSpec {
 
     // 全チャンネル可聴 (= デフォルト構築)。disable / 非パラレル経路で使用する。
     static constexpr ChannelMaskSpec allAudible() noexcept { return {}; }
+};
+
+// =============================================================================
+// IChipBackend: 単一チップバックエンド抽象
+//
+// 純粋仮想インターフェース。fmgen 等の具体実装は利用側 (mucom88v FmgenBackend) が
+// 提供し、本ヘッダにはチップ依存を一切漏らさない。生成関数 (createFmgenBackend 等) は
+// エミュレータ依存のため利用側が宣言・実装する。
+// =============================================================================
+class IChipBackend {
+public:
+    virtual ~IChipBackend() = default;
+
+    virtual void init(ChipMode mode, uint32_t hostSampleRate) = 0;
+    virtual void reset() noexcept = 0;
+    virtual bool hasChip() const noexcept = 0;
+
+    virtual void writeReg(int port, uint8_t addr, uint8_t data) noexcept = 0;
+    // interleavedLR は frameCount*2 要素の L/R インターリーブバッファを指す。
+    // fmgen の Mix は加算合成のため、呼び出し前に必ずゼロ初期化すること。
+    // frameCount>1 を呼ぶ場合も要素数・ゼロ初期化・位相連続性を保つ。
+    virtual void mixChunk(int32_t* interleavedLR, uint32_t frameCount) noexcept = 0;
+    virtual void setSsgBalanceLinear(float ratio) noexcept = 0;
+    virtual void setChannelMask(const ChannelMaskSpec& spec) noexcept = 0;
+
+    // 渡した PCM バッファの所有権は実装側 (fmgen) が取るため、呼び出し側では delete しない。
+    virtual void loadRhythmSample(int idx,
+                                  const int16_t* pcm,
+                                  uint32_t numSamples,
+                                  uint32_t rate) = 0;
+    // ADPCM-B RAM へ PCM データをロードする。容量超過分は実装側でクランプする。
+    // data==nullptr / バッファ未確保なら何もせず false を返す。
+    [[nodiscard]] virtual bool loadAdpcmBData(const uint8_t* data, std::size_t size) noexcept = 0;
 };
