@@ -81,4 +81,9 @@ public:
     // ADPCM-B RAM へ PCM データをロードする。容量超過分は実装側でクランプする。
     // data==nullptr / バッファ未確保なら何もせず false を返す。
     [[nodiscard]] virtual bool loadAdpcmBData(const uint8_t* data, std::size_t size) noexcept = 0;
+
+    // 生 ADPCM-A(rhythm) ROM(標準 0x2000B)を内部読出方式 backend(ymfm 等)が参照できるよう取り込む。
+    // 所有権は移譲せず実装側が内部コピーする(rom は呼び出し側が保持)。rom==nullptr / size==0 は何もしない。
+    // decoded-PCM 経路の backend(fmgen 等)は loadRhythmSample で rhythm を扱うため override 不要(default no-op)。
+    virtual void loadRhythmRom(const uint8_t* rom, std::size_t size) noexcept { (void)rom; (void)size; }
 };
