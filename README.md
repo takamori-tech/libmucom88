@@ -6,6 +6,9 @@ A MUCOM88-compatible MML parser, sequencer, and ADPCM-B voice playback library f
 ヘッダーオンリーC++17。外部依存なし。  
 Header-only C++17. No external dependencies.
 
+CMake の `INTERFACE` ターゲットとして組み込み可能で、単体ビルドでは付属ツールとヘッダースモークテストもビルドできる。  
+Can be consumed as a CMake `INTERFACE` target, and the standalone build also builds the bundled tool and header smoke test.
+
 ## 概要 / Overview
 
 [MUCOM88](https://www.ancient.co.jp/~mucom88/)（古代祐三氏がNEC PC-8801向けに開発した音楽ドライバー）と互換のMMLパーサー＋シーケンサーを提供する。MMLテキストからYM2608のレジスタ書き込みを生成し、任意のYM2608エミュレータ（fmgen等）をバックエンドとして使用できる。  
@@ -13,6 +16,9 @@ Provides a MML parser and sequencer compatible with [MUCOM88](https://www.ancien
 
 BGM再生に加え、ADPCM-Bを使ったゲームボイス再生にも対応。BGM再生中にボイスを差し込む際のKトラック優先制御（BGMのADPCM-Bを自動抑制）と自動ダッキング（FM/SSG減衰）を内蔵。  
 Supports ADPCM-B game voice playback alongside BGM. Built-in K-track priority control (auto-suppresses BGM ADPCM-B) and automatic ducking (FM/SSG attenuation) during voice playback.
+
+YM2608 ADPCM-A（リズム音源）の整数デコード/エンコードヘッダーも含む。付属の `drumkit_gen` は、ユーザー自身が用意した WAV ファイルから 8192 バイトの ADPCM-A リズム ROM を生成する。サンプルデータは同梱しないため、ライセンスクリーンに利用できる。  
+It also includes integer YM2608 ADPCM-A (rhythm) decode/encode headers. The bundled `drumkit_gen` tool builds an 8192-byte ADPCM-A rhythm ROM from WAV files supplied by the user. No sample data is shipped, keeping the library license-clean.
 
 ## アーキテクチャ / Architecture
 
@@ -80,10 +86,14 @@ engine.playVoice(0);  // BGMのKトラックは自動抑制、FM/SSGは自動ダ
 
 | ファイル / File | 内容 / Description |
 |---------|------|
+| `CMakeLists.txt` | ヘッダーオンリー `mucom88::mucom88` ターゲット、付属ツール/テストの単体ビルド / Header-only `mucom88::mucom88` target plus standalone tool/test build |
+| `include/mucom88/adpcm_a_decode.hpp` | YM2608 ADPCM-A リズム ROM デコード / YM2608 ADPCM-A rhythm ROM decoder |
+| `include/mucom88/adpcm_a_encode.hpp` | YM2608 ADPCM-A リズム ROM エンコード / YM2608 ADPCM-A rhythm ROM encoder |
 | `fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー / FM patch definitions, frequency conversion, voice.dat parser |
 | `fm_engine_interface.hpp` | IFmEngine 抽象インターフェース / IFmEngine abstract interface |
 | `mml_parser.hpp` | MMLパーサー（MUCOM88形式、132曲検証済み）/ MML parser (MUCOM88 format, verified with 132 songs) |
 | `mml_engine.hpp` | MMLシーケンサー（Timer-B駆動、11ch、リバーブ、LFO、ポルタメント）/ MML sequencer (Timer-B driven, 11ch, reverb, LFO, portamento) |
+| `tools/drumkit_gen.cpp` | WAV から YM2608 ADPCM-A リズム ROM を生成する CLI / CLI that builds a YM2608 ADPCM-A rhythm ROM from WAV files |
 
 ## ドキュメント / Documentation
 
@@ -114,8 +124,72 @@ engine.playVoice(0);  // BGMのKトラックは自動抑制、FM/SSGは自動ダ
 git submodule add https://github.com/takamori-tech/libmucom88.git vendor/libmucom88
 ```
 
+### CMake
+
+親プロジェクトから `add_subdirectory` すると、`mucom88::mucom88` をリンクするだけで `include/` が設定される。  
+When used through `add_subdirectory`, link `mucom88::mucom88` and the `include/` path is configured automatically.
+
+```cmake
+add_subdirectory(vendor/libmucom88)
+target_link_libraries(your_target PRIVATE mucom88::mucom88)
+```
+
+### Include Path Only
+
+CMake を使わない場合は `include` をインクルードパスへ追加する。  
+Without CMake, add `include` to your compiler include path.
+
 ```cmake
 target_include_directories(your_target PRIVATE vendor/libmucom88/include)
+```
+
+```bash
+g++ -std=c++17 -I vendor/libmucom88/include your_app.cpp -o your_app
+```
+
+## 単体ビルド / Standalone Build
+
+単体ビルドではヘッダーオンリーライブラリに加えて、`drumkit_gen` とヘッダースモークテストをビルドする。  
+The standalone build creates the header-only target, the `drumkit_gen` tool, and a header smoke test.
+
+```bash
+cmake -B build .
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+CMake オプションでツール/テストを個別に無効化できる。  
+Tools and tests can be disabled independently with CMake options.
+
+```bash
+cmake -B build . -DLIBMUCOM88_BUILD_TOOLS=OFF -DLIBMUCOM88_BUILD_TESTS=OFF
+```
+
+## drumkit_gen
+
+`drumkit_gen` は、6つの WAV ファイル（BD/SD/CY/HH/TM/RS）から YM2608 ADPCM-A リズム ROM（8192 バイト）を生成する CLI ツール。省略したスロットは無音になり、`-base` を指定すると既存 ROM の未指定スロットを保持して差し替えできる。  
+`drumkit_gen` is a CLI tool that builds a YM2608 ADPCM-A rhythm ROM (8192 bytes) from up to six WAV files (BD/SD/CY/HH/TM/RS). Omitted slots become silence, or with `-base`, omitted slots keep the existing ROM data.
+
+このリポジトリは著作権のあるドラムサンプルを同梱しない。自分で録音・作成した WAV、または利用許諾のある WAV を指定して、自分専用のリズム ROM を生成する。  
+This repository does not ship copyrighted drum samples. Use WAV files you recorded, created, or are licensed to use, and generate your own rhythm ROM.
+
+```bash
+./build/drumkit_gen -o my_drums.bin \
+  -bd BD.wav -sd SD.wav -cy CY.wav \
+  -hh HH.wav -tm TM.wav -rs RS.wav
+```
+
+```text
+Usage: drumkit_gen -o <output.bin> [-bd BD.wav] [-sd SD.wav] [-cy CY.wav]
+                                  [-hh HH.wav] [-tm TM.wav] [-rs RS.wav]
+       drumkit_gen -o <output.bin> -base <rom.bin> [-bd BD.wav] ...
+```
+
+CMake なしでも単体コンパイルできる。  
+It can also be compiled directly without CMake.
+
+```bash
+g++ -std=c++17 -O2 -I include tools/drumkit_gen.cpp -o drumkit_gen
 ```
 
 ## 利用プロジェクト / Projects Using This Library

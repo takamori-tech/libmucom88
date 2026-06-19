@@ -2,3 +2,6 @@ docs/refactoring_plan.md
 
 # エージェント実行時ワークツリー（ローカル限定・追跡しない）
 .claude/worktrees/
+
+# CMake build output
+build/
