@@ -122,6 +122,21 @@ YM2608エミュレータの抽象インターフェース。ゲーム側で実�
 
 ---
 
+## IChipBackend（chip_backend_interface.hpp）
+
+単一チップバックエンドの抽象。具体実装（fmgen / ymfm 等）は利用側が提供する。
+
+### オペレータ向けパラメータ（非純粋仮想、no-op 既定）
+
+以下は利用者（オペレータ）が選択するチップ固有パラメータ。**いずれも非純粋仮想で no-op 既定実装を持つ**ため、fmgen やその他のバックエンドは override 不要で影響を受けない（vtable 末尾追加＝後方互換）。内部読出方式バックエンド（ymfm 等）のみ override する。
+
+| メソッド | 説明 |
+|---------|------|
+| `setDacModel(bool enabled)` | 後段 YM3016 DAC モデル（companding 再量子化）の有効/無効。内部読出 backend（ymfm）のみ override。decoded 経路（fmgen 等）は no-op 既定を継承＝無改変。設定は audio パス外で行う |
+| `setFidelity(int fidelity)` | ymfm リサンプリング忠実度（0=MED / 1=MAX 既定）。CPU 制約のある利用者（例: Raspberry Pi 4B 上のゲーム）が MED を選べる。**忠実度変更は native rate を変えるため backend 再init が前提**。fmgen 等は no-op 継承＝無変更 |
+
+---
+
 ## MmlParser（mml_parser.hpp）
 
 MUCOM88互換MMLパーサー。MUCテキストからイベント列を生成する。

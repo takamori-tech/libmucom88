@@ -86,4 +86,13 @@ public:
     // 所有権は移譲せず実装側が内部コピーする(rom は呼び出し側が保持)。rom==nullptr / size==0 は何もしない。
     // decoded-PCM 経路の backend(fmgen 等)は loadRhythmSample で rhythm を扱うため override 不要(default no-op)。
     virtual void loadRhythmRom(const uint8_t* rom, std::size_t size) noexcept { (void)rom; (void)size; }
+
+    // 後段 YM3016 DAC モデル(roundtrip_fp companding requantizer)の有効/無効。
+    // 内部読出 backend(ymfm)のみ override。decoded 経路(fmgen 等)は no-op 既定継承=無改変。
+    // RT 安全: 設定は audio パス外。実際の roundtrip 適用は利用側 backend の native-rate mix 内。
+    virtual void setDacModel(bool enabled) noexcept { (void)enabled; }
+
+    // ymfm リサンプリング忠実度(0=MED / 1=MAX 既定)。内部リサンプル backend(ymfm)のみ override。
+    // fmgen 等は no-op 継承=無変更。fidelity 変更は native rate を変えるため backend 再init が前提。
+    virtual void setFidelity(int fidelity) noexcept { (void)fidelity; }
 };
