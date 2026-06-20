@@ -23,11 +23,15 @@ public:
         // L1 chip 補正 × L2 を inner へ注入。identity(fmgen)では 1.0 注入=override 無し backend で no-op。
         // ChipInstance 再init で inner が作り直されても L2 を復元するため無条件(hasChip ガード禁止)。
         m_inner->setSectionGainSsg(m_cal.ssgGain * m_l2Ssg);
+        m_inner->setSectionGainAdpcmA(m_l2AdpcmA);
+        m_inner->setSectionGainAdpcmB(m_l2AdpcmB);
     }
 
     void reset() noexcept override {
         m_inner->reset();
         m_inner->setSectionGainSsg(m_cal.ssgGain * m_l2Ssg);  // 防御的(reset は clobber しないが冪等)
+        m_inner->setSectionGainAdpcmA(m_l2AdpcmA);
+        m_inner->setSectionGainAdpcmB(m_l2AdpcmB);
     }
     bool hasChip() const noexcept override { return m_inner->hasChip(); }
 
@@ -87,11 +91,23 @@ public:
         m_inner->setSectionGainSsg(m_cal.ssgGain * gain);
     }
 
+    void setSectionGainAdpcmA(float gain) noexcept override {
+        m_l2AdpcmA = gain;
+        m_inner->setSectionGainAdpcmA(gain);
+    }
+
+    void setSectionGainAdpcmB(float gain) noexcept override {
+        m_l2AdpcmB = gain;
+        m_inner->setSectionGainAdpcmB(gain);
+    }
+
 private:
     std::unique_ptr<IChipBackend> m_inner;
     const ChipCalibration m_cal;
     ChipMode m_mode = ChipMode::OPNA;
     float m_l2Ssg = 1.0f;   // ユーザー区間ゲイン L2(段2-d で配線、現状 1.0 固定)。init/reset で cal×L2 を再注入するため保持。
+    float m_l2AdpcmA = 1.0f; // ADPCM-A ユーザー区間ゲイン L2。cal とは合成せず backend へ pass-through する。
+    float m_l2AdpcmB = 1.0f; // ADPCM-B ユーザー区間ゲイン L2。cal とは合成せず backend へ pass-through する。
 };
 
 // null inner は decorator を作らず nullptr を返す。

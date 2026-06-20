@@ -104,4 +104,10 @@ public:
     // no-op 継承=SSG 既存経路不変。reg 域ではなく method-domain の線形乗算に限定する。
     // RT 安全: 設定は audio パス外。gain==1.0f で実質無作用。
     virtual void setSectionGainSsg(float gain) noexcept { (void)gain; }
+
+    // ADPCM-A/B セクション音量トリム。ymfm backend の register 境界でのみ適用し、
+    // decoded 経路(fmgen 等)は no-op 継承で既存経路を保持する。
+    // RT 安全: 設定は audio パス外。gain==1.0f で実質無作用。
+    virtual void setSectionGainAdpcmA(float gain) noexcept { (void)gain; }
+    virtual void setSectionGainAdpcmB(float gain) noexcept { (void)gain; }
 };
