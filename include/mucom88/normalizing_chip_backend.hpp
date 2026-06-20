@@ -20,9 +20,15 @@ public:
     void init(ChipMode mode, uint32_t hostSampleRate) override {
         m_mode = mode;
         m_inner->init(mode, hostSampleRate);
+        // L1 chip 補正 × L2 を inner へ注入。identity(fmgen)では 1.0 注入=override 無し backend で no-op。
+        // ChipInstance 再init で inner が作り直されても L2 を復元するため無条件(hasChip ガード禁止)。
+        m_inner->setSectionGainSsg(m_cal.ssgGain * m_l2Ssg);
     }
 
-    void reset() noexcept override { m_inner->reset(); }
+    void reset() noexcept override {
+        m_inner->reset();
+        m_inner->setSectionGainSsg(m_cal.ssgGain * m_l2Ssg);  // 防御的(reset は clobber しないが冪等)
+    }
     bool hasChip() const noexcept override { return m_inner->hasChip(); }
 
     void writeReg(int port, uint8_t addr, uint8_t data) noexcept override {
@@ -77,13 +83,15 @@ public:
     }
 
     void setSectionGainSsg(float gain) noexcept override {
-        m_inner->setSectionGainSsg(gain);
+        m_l2Ssg = gain;
+        m_inner->setSectionGainSsg(m_cal.ssgGain * gain);
     }
 
 private:
     std::unique_ptr<IChipBackend> m_inner;
     const ChipCalibration m_cal;
     ChipMode m_mode = ChipMode::OPNA;
+    float m_l2Ssg = 1.0f;   // ユーザー区間ゲイン L2(段2-d で配線、現状 1.0 固定)。init/reset で cal×L2 を再注入するため保持。
 };
 
 // null inner は decorator を作らず nullptr を返す。
