@@ -27,6 +27,10 @@ enum class ChipMode {
     OPNB = 2,   // YM2610拡張
 };
 
+// FM エンジン種別。mucom88v FmEngineType と値順一致。段2 で FmEngineType を
+// 本 enum の alias へ縮退させ、independent enum を残さない。
+enum class ChipEngine { Fmgen = 0, Ymfm = 1 };
+
 // =============================================================================
 // ChannelMaskSpec: チャンネル可聴指定 (audible=1 セマンティクス)
 //
@@ -95,4 +99,9 @@ public:
     // ymfm リサンプリング忠実度(0=MED / 1=MAX 既定)。内部リサンプル backend(ymfm)のみ override。
     // fmgen 等は no-op 継承=無変更。fidelity 変更は native rate を変えるため backend 再init が前提。
     virtual void setFidelity(int fidelity) noexcept { (void)fidelity; }
+
+    // SSG セクション音量トリム。内部加算 backend(ymfm)のみ override し、decoded 経路(fmgen)は
+    // no-op 継承=SSG 既存経路不変。reg 域ではなく method-domain の線形乗算に限定する。
+    // RT 安全: 設定は audio パス外。gain==1.0f で実質無作用。
+    virtual void setSectionGainSsg(float gain) noexcept { (void)gain; }
 };
