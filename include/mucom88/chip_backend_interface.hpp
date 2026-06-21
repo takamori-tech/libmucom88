@@ -20,11 +20,14 @@
 //
 // 値は mucom88v の chipModeToIndex() と m_modeFiles[] のインデックスとして使うため、
 // OPNA=0 / OPM=1 / OPNB=2 の順序を変更してはいけない。
+// OPN(YM2203) は FM ch1-3 + SSG ch1-3 のみ可聴。FM4-6/ADPCM-A(rhythm)/ADPCM-B/port1 は OPN では縮退し、
+// loadRhythmRom/loadAdpcmBData/loadRhythmSample は既存の no-op/false 既定を継承する。
 // =============================================================================
 enum class ChipMode {
     OPNA = 0,   // YM2608
     OPM  = 1,   // YM2151拡張
     OPNB = 2,   // YM2610拡張
+    OPN  = 3,   // YM2203（FM3ch + SSG3ch、ADPCM/rhythm/port1 なし）
 };
 
 // FM エンジン種別。mucom88v FmEngineType と値順一致。段2 で FmEngineType を
@@ -43,6 +46,8 @@ enum class ChipEngine { Fmgen = 0, Ymfm = 1 };
 // 全 false (全 mute) を既定にすると disable 経路 (全可聴へ戻す) が全消音事故に
 // なるため、必ず全 true を既定とする。C++17 集成体性は NSDMI でも保持される
 // (P0017R1)。
+// OPN(YM2203) では fm[0..2] と ssg[0..2] のみ有効。fm[3..5]/adpcmB/rhythm[*] は無視 (don't-care)。
+// bit 配置は OPNA と互換のため lowering 関数は無改修で正しく作用する。
 // =============================================================================
 struct ChannelMaskSpec {
     bool fm[6]     { true, true, true, true, true, true };  // FM1..6 可聴
@@ -110,4 +115,11 @@ public:
     // RT 安全: 設定は audio パス外。gain==1.0f で実質無作用。
     virtual void setSectionGainAdpcmA(float gain) noexcept { (void)gain; }
     virtual void setSectionGainAdpcmB(float gain) noexcept { (void)gain; }
+
+    // チップ動作クロック(Hz)を注入する。OPN(YM2203) は VGM ヘッダの実クロック(例 4'000'000)を
+    // 反映するために使う。クロックの実反映点は各 backend の init() 内 Init/SetRate のみのため、
+    // 必ず init() の前に呼ぶこと（init 後の呼び出しは次回 init まで効かない）。未設定時は
+    // ChipMode 既定（OPNA/OPM/OPNB = 7'987'200, OPN = 4'000'000）へフォールバックする。
+    // RT 安全: 設定は audio パス外。fmgen 等 OPNA 専用 backend は no-op 継承で無変更。
+    virtual void setChipClock(uint32_t hz) noexcept { (void)hz; }
 };
