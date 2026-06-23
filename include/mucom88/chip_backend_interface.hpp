@@ -20,6 +20,8 @@
 //
 // 値は mucom88v の chipModeToIndex() と m_modeFiles[] のインデックスとして使うため、
 // OPNA=0 / OPM=1 / OPNB=2 の順序を変更してはいけない。
+// mml_parser.hpp の nested ChipMode と対応。OPN は末尾維持、変換は named-value のみで行い、
+// static_cast による数値変換は禁止。
 // OPN(YM2203) は FM ch1-3 + SSG ch1-3 のみ可聴。FM4-6/ADPCM-A(rhythm)/ADPCM-B/port1 は OPN では縮退し、
 // loadRhythmRom/loadAdpcmBData/loadRhythmSample は既存の no-op/false 既定を継承する。
 // =============================================================================
@@ -29,6 +31,38 @@ enum class ChipMode {
     OPNB = 2,   // YM2610拡張
     OPN  = 3,   // YM2203（FM3ch + SSG3ch、ADPCM/rhythm/port1 なし）
 };
+
+// =============================================================================
+// ChipProfile: チップ互換情報
+//
+// OPN の 3'993'600Hz は PC-88 OSC3/8 の真値。VGM 由来再生で 4'000'000Hz が
+// 与えられる場合は setChipClock() で注入する（ヘッダ丸め、約 +2.77cent）。
+// OPM/OPNB の値は #299 まで消費者なしの暫定値で inert。
+// =============================================================================
+struct ChipProfile {
+    uint32_t defaultClock;
+    int      numFmChannels;
+    int      numSsgChannels;
+    bool     hasRhythm;
+    bool     hasAdpcmB;
+};
+
+[[nodiscard]] constexpr ChipProfile chipModeProfile(ChipMode mode) noexcept
+{
+    switch (mode) {
+    case ChipMode::OPNA: return { 7987200u, 6, 3, true,  true  };
+    case ChipMode::OPM:  return { 7987200u, 8, 0, false, false };
+    case ChipMode::OPNB: return { 7987200u, 6, 3, true,  true  };
+    case ChipMode::OPN:  return { 3993600u, 3, 3, false, false };
+    }
+    return chipModeProfile(ChipMode::OPNA);
+}
+
+static_assert(chipModeProfile(ChipMode::OPNA).defaultClock == 7987200u,
+              "OPNA default clock must remain 7987200Hz");
+static_assert(chipModeProfile(ChipMode::OPN).defaultClock == 3993600u &&
+              chipModeProfile(ChipMode::OPN).numFmChannels == 3,
+              "OPN profile must match YM2203 hardware limits");
 
 // FM エンジン種別。mucom88v FmEngineType と値順一致。段2 で FmEngineType を
 // 本 enum の alias へ縮退させ、independent enum を残さない。
@@ -116,10 +150,10 @@ public:
     virtual void setSectionGainAdpcmA(float gain) noexcept { (void)gain; }
     virtual void setSectionGainAdpcmB(float gain) noexcept { (void)gain; }
 
-    // チップ動作クロック(Hz)を注入する。OPN(YM2203) は VGM ヘッダの実クロック(例 4'000'000)を
-    // 反映するために使う。クロックの実反映点は各 backend の init() 内 Init/SetRate のみのため、
-    // 必ず init() の前に呼ぶこと（init 後の呼び出しは次回 init まで効かない）。未設定時は
-    // ChipMode 既定（OPNA/OPM/OPNB = 7'987'200, OPN = 4'000'000）へフォールバックする。
+    // チップ動作クロック(Hz)を注入する。未設定時は chipModeProfile() の既定値へフォールバックする。
+    // OPN(YM2203) の正本既定は 3'993'600Hz。VGM ヘッダ由来の 4'000'000Hz 丸め値を
+    // 反映する場合は setChipClock() で注入する。クロックの実反映点は各 backend の init() 内 Init/SetRate のみのため、
+    // 必ず init() の前に呼ぶこと（init 後の呼び出しは次回 init まで効かない）。
     // RT 安全: 設定は audio パス外。fmgen 等 OPNA 専用 backend は no-op 継承で無変更。
     virtual void setChipClock(uint32_t hz) noexcept { (void)hz; }
 };

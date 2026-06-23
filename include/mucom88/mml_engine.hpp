@@ -1491,7 +1491,7 @@ private:
         } else {
             // FM: 始点blockを固定し、FNUMBを半音比率で連続的に伸縮する。
             int startBlock = 0;
-            uint16_t startFnum = noteToFnum(startNote, startBlock);
+            uint16_t startFnum = noteToFnum(startNote, startBlock, m_chipClock);
             double target = static_cast<double>(startFnum);
             const double ratio = (semis >= 0) ? 1.0594630943592953 : 0.9438743126816935;
             for (int i = 0; i < std::abs(semis); ++i) target *= ratio;
@@ -2376,7 +2376,7 @@ private:
         st.lfo.pitchOffset  = 0;
         int pitchOffset = st.detune + st.lfo.pitchOffset;
         int block = 4;
-        uint16_t fnum = noteToFnum(noteNum, block);
+        uint16_t fnum = noteToFnum(noteNum, block, m_chipClock);
         int adjusted = static_cast<int>(fnum) + pitchOffset;
         while (adjusted > 0x7FF && block < 7) { adjusted >>= 1; block++; }
         while (adjusted < 0 && block > 0)     { adjusted <<= 1; block--; }
@@ -2441,7 +2441,7 @@ private:
         int off  = fmOffset(fi);
 
         int block = 4;
-        uint16_t fnum = noteToFnum(noteNum, block);
+        uint16_t fnum = noteToFnum(noteNum, block, m_chipClock);
         // ピッチオフセット適用（F-Number直接加算）
         int adjusted = static_cast<int>(fnum) + pitchOffset;
         // ブロック境界のキャリー処理

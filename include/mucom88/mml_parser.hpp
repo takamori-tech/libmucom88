@@ -175,7 +175,9 @@ public:
     // MucFile: .muc ファイル全体をパースした結果
     // ==========================================================================
     // 音源チップモード（MUCOM88EX拡張: #mode ディレクティブ）
-    enum class ChipMode { OPNA, OPM, OPNB };
+    // chip_backend_interface.hpp の canonical ChipMode と対応。OPN は末尾維持、
+    // 変換は named-value のみで行い、static_cast による数値変換は禁止。
+    enum class ChipMode { OPNA, OPM, OPNB, OPN };
 
     struct MucFile {
         std::string title;
@@ -492,7 +494,7 @@ private:
         else if (startsWith("#pcm"))     result.pcmFile   = getValue(4);
         else if (startsWith("#driver"))  result.driver    = getValue(7);
         else if (startsWith("#mode")) {
-            // MUCOM88EX拡張: #mode OPNA / #mode OPM / #mode OPNB
+            // MUCOM88EX拡張: #mode OPNA / #mode OPM / #mode OPNB / #mode OPN
             auto mode = getValue(5);
             // 大文字に正規化
             for (auto& c : mode) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -501,6 +503,7 @@ private:
                 mode.pop_back();
             if (mode == "OPM" || mode == "G2")        result.chipMode = ChipMode::OPM;
             else if (mode == "OPNB" || mode == "NG")  result.chipMode = ChipMode::OPNB;
+            else if (mode == "OPN")                   result.chipMode = ChipMode::OPN;
             else                                       result.chipMode = ChipMode::OPNA;
         }
     }

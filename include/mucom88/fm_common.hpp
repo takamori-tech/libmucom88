@@ -71,7 +71,7 @@ using Mucom88Patch = FmPatch;
 //   key = noteNum % 12 (0=C, 1=C#, ..., 11=B)
 //   block = noteNum / 12 - 1 (MIDI octave 0 = block -1, MIDI octave 1 = block 0)
 // =============================================================================
-[[nodiscard]] inline uint16_t noteToFnum(int noteNum, int& blockOut)
+[[nodiscard]] inline uint16_t noteToFnum(int noteNum, int& blockOut, uint32_t chipClock = 7987200)
 {
     // MUCOM88 FNUMB テーブル: C, C#, D, D#, E, F, F#, G, G#, A, A#, B
     static const uint16_t fnumb[12] = {
@@ -85,7 +85,18 @@ using Mucom88Patch = FmPatch;
     // MIDI note 36 = C2 = MUCOM88 o2 = block 1
     // ...
     // MIDI note 60 = C4 = MUCOM88 o4 = block 3
-    int block = (noteNum / 12) - 2;
+    static constexpr uint32_t kOpnaRefClock = 7987200u;
+    int blockShift = 0;
+    // 低クロック系のみ block を上げて補正する downshift-only 設計。
+    // chipClock=0 は OPNA 挙動へフォールバックし、log2(/0) を避ける。
+    if (chipClock > 0 && chipClock < kOpnaRefClock) {
+        blockShift = static_cast<int>(
+            std::lround(std::log2(static_cast<double>(kOpnaRefClock) / chipClock)));
+    }
+    // OPN(YM2203) は OPNA の半分のクロックなので block +1。OPNA block7 の高音は
+    // block8 を表現できず clamp で block7 になり、実 OPN の縮小レンジどおり最上位
+    // オクターブを失う。
+    int block = (noteNum / 12) - 2 + blockShift;
     block = std::clamp(block, 0, 7);
 
     blockOut = block;
