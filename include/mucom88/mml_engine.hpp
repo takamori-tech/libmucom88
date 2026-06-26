@@ -107,6 +107,14 @@ public:
         m_seAllocCounter = 0;
     }
 
+    // チップ動作クロック(Hz)をライブ更新する（Issue #89）。init() と異なり再生位置・状態を
+    // 変えず、以降の noteToFnum/noteToSSGPeriod が参照する m_chipClock のみ更新する
+    // （発音中のノートは次の key-on で再ピッチ）。前提: 呼び出し側が advance() と直列化する
+    // こと（本クラスのスレッド契約と同じ。mucom88v は swap-gate で advance 静止中に呼ぶ）。
+    // chipClock は有効な非ゼロのマスタークロック（0 ガードは置かない＝init() と対称、呼出側バグを隠さない）。
+    // 注: IChipBackend::setChipClock とは無関係の MmlEngine 専用メンバ（同名・別クラス）。
+    void setChipClock(uint32_t chipClock) noexcept { m_chipClock = chipClock; }
+
     // ── MML イベント列を直接セット（MucFile用）─────────
     void setEvents(int ch, const std::vector<MmlEvent>& evts)
     {
