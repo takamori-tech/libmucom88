@@ -161,6 +161,7 @@ struct MucFile {
     std::string voiceFile;   // #voice（voice.datファイル名）
     std::string pcmFile;     // #pcm（mucompcm.binファイル名）
     ChipMode chipMode;       // OPNA / OPM / OPNB
+    bool chipModeExplicit;   // #mode が明示された場合のみ true（無指定の既定 OPNA と区別）
     int wholeTick;           // Cコマンド値（全音符クロック数、デフォルト128）
 
     std::array<std::vector<MmlEvent>, 11> channelEvents;  // A-K

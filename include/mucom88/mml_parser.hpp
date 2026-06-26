@@ -189,6 +189,7 @@ public:
         std::string pcmFile;
         std::string driver;    // #driver（mucom88 / mucom88e / mucom88em / mucomdotnet。空=未指定=標準mucom88 1.7相当）
         ChipMode    chipMode  = ChipMode::OPNA; // デフォルトOPNA（#mode未指定時）
+        bool        chipModeExplicit = false; // #mode ディレクティブが明示された場合のみ true（無指定の既定 OPNA と区別）
         int         wholeTick = WHOLE_TICK;  // Cコマンドの値（デフォルト128）
 
         // チャンネルごとのイベント列（インデックス = チャンネル番号）
@@ -496,6 +497,8 @@ private:
         else if (startsWith("#mode")) {
             // MUCOM88EX拡張: #mode OPNA / #mode OPM / #mode OPNB / #mode OPN
             auto mode = getValue(5);
+            // #mode 行が存在する時点で明示指定とみなす（空・未知の引数=OPNA も含め、作者の意図を尊重）
+            result.chipModeExplicit = true;
             // 大文字に正規化
             for (auto& c : mode) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
             // 末尾空白・改行除去
