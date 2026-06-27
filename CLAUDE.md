@@ -1,7 +1,7 @@
 # libmucom88
 
 MUCOM88互換 MMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ライブラリ（YM2608 / OPNA）。
-ヘッダーオンリーC++17。外部依存なし。
+コアはヘッダーオンリーC++17・外部依存なし。optional `mucom88/ymfm_engine.hpp` を使う場合のみ利用側でymfmヘッダ/linkを追加する。
 
 詳細API: @docs/api_reference.md / 組み込みガイド: @docs/integration_guide.md
 
@@ -9,6 +9,7 @@ MUCOM88互換 MMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ラ�
 
 ヘッダーオンリー設計: submodule経由で複数プロジェクト（VST/AU, ゲーム）に組み込むため、ビルド依存を最小化。
 IFmEngineを抽象化している理由: エミュレータ実装（fmgen等）を利用側に委ねることで、ライブラリ自体をエミュレータ非依存にする。
+ただし ymfm については `FmEngineYmfm : IFmEngine` の互換アダプタを optional header として提供する。
 
 ```
 MUCテキスト (.muc)
@@ -17,7 +18,7 @@ MmlParser ── パース、マクロ展開、イベント列生成
     ▼
 MmlEngine ── シーケンス再生、Timer-B駆動、レジスタ書き込み
     ▼
-IFmEngine ── 抽象インターフェース（利用側で実装）
+IFmEngine ── 抽象インターフェース（利用側で実装、または FmEngineYmfm を使用）
     ▼
 [YM2608エミュレータ]
 ```
@@ -34,6 +35,16 @@ IFmEngine ── 抽象インターフェース（利用側で実装）
 
 - **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
 - **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
+
+## 直近ハンドオーバー（2026-06-27 / ymfm OPNA互換アダプタ）
+
+- **コミット**: `bc3796c Add optional ymfm OPNA engine adapter`（`origin/main` にpush済み）。
+- **Issue**: `takamori-tech/libmucom88#90` は completed close 済み。
+- **目的**: CLAUDIUS がfmgen実装に依存せず、チップ忠実なymfm OPNAへ切り替えられるようにする。ただし既存 `MmlEngine` / `IFmEngine` API形状は維持し、既存fmgen利用者を壊さない。
+- **追加API**: `include/mucom88/ymfm_engine.hpp` の `FmEngineYmfm : IFmEngine`。OPNA固定、`CHIP_CLOCK=7987200`、DACモデル既定true、`FIDELITY_HIGH=1`（ymfm `OPN_FIDELITY_MAX`）既定、`FIDELITY_MED=0` も選択可。
+- **依存方針**: libmucom88コアは外部依存なしのまま。`ymfm_engine.hpp` をincludeする利用者だけがymfm include pathと `ymfm_adpcm.cpp` / `ymfm_misc.cpp` / `ymfm_opn.cpp` / `ymfm_ssg.cpp` linkを追加する。
+- **実装範囲**: ADPCM-A ROM読出、ADPCM-B RAM読書き、`loadPcmDataToAdpcmB`、voice table、`playVoice(level)`、`stopAdpcmB`、`generateInterleaved` を `IFmEngine` 互換で提供。
+- **検証済み**: core headers はymfmなしでコンパイル成功、standalone build + `adpcm_a_roundtrip` 成功、`ymfm_engine.hpp` smoke compile 成功（警告はupstream ymfm unused parameterのみ）。CLAUDIUS側では `7855863` で `vendor/libmucom88` を `bc3796c` へ更新し、`vendor/ymfm` submoduleを追加済み。
 
 ## 正本と変更フロー
 
