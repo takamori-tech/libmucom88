@@ -33,6 +33,7 @@ public:
     static constexpr uint32_t CHIP_CLOCK = chipModeProfile(CHIP_MODE).defaultClock;
     static constexpr int FIDELITY_MED = 0;
     static constexpr int FIDELITY_HIGH = 1;
+    static constexpr float DEFAULT_SSG_MIX_SCALE = 1.0f / 3.0f;
 
     FmEngineYmfm() : m_chip(*this) {}
 
@@ -47,6 +48,18 @@ public:
 
     [[nodiscard]] bool dacModelEnabled() const noexcept { return m_dacModelEnabled; }
     [[nodiscard]] int fidelity() const noexcept { return m_fidelity; }
+
+    void setSsgMixScale(float ssgScale) noexcept override
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_ssgMixScale = ssgScale;
+    }
+
+    [[nodiscard]] float getSsgMixScale() const noexcept override
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        return m_ssgMixScale;
+    }
 
     void init(uint32_t sampleRate) override
     {
@@ -91,7 +104,7 @@ public:
                     fmAdpcmR = ymfm::roundtrip_fp(fmAdpcmR);
                 }
 
-                const int32_t ssg = output.data[2] / 3;
+                const int32_t ssg = scaleSsg(output.data[2]);
                 m_lastL = clamp16(fmAdpcmL + ssg);
                 m_lastR = clamp16(fmAdpcmR + ssg);
             }
@@ -264,6 +277,7 @@ private:
     bool m_hasAdpcmRom = false;
     bool m_dacModelEnabled = true;
     int m_fidelity = FIDELITY_HIGH;
+    float m_ssgMixScale = DEFAULT_SSG_MIX_SCALE;
 
     std::vector<uint8_t> m_adpcmARom;
     std::vector<uint8_t> m_adpcmBRam;
@@ -275,6 +289,13 @@ private:
     static int16_t clamp16(int32_t value) noexcept
     {
         return static_cast<int16_t>(std::clamp(value, -32768, 32767));
+    }
+
+    int32_t scaleSsg(int32_t value) const noexcept
+    {
+        if (m_ssgMixScale == DEFAULT_SSG_MIX_SCALE)
+            return value / 3;
+        return static_cast<int32_t>(value * m_ssgMixScale);
     }
 
     void writeYm2608RegLocked(int port, uint8_t addr, uint8_t data) noexcept
