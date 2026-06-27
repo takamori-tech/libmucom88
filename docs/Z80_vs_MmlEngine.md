@@ -282,8 +282,8 @@ MmlEngineでは:
 | SOFENV/SOFEV1-9 | SSGソフトウェアエンベロープ (ADSR) | ssgTickEnvelope() | ✅ 実装済み(#17,#29) |
 | OTOSSG/OTOCAL | SSGプリセット (@N + SSGDAT) | ssgApplyPreset() | ✅ 実装済み(#43) |
 | VOLUPS/PSGVOL | SSG音量設定 | ssgSetVolume() | ✅ 実装済み |
-| NOISE/NOISEW | SSGノイズ周波数 (w) | REG_WRITE event (mixer) | ✅ 実装済み |
-| ENVPST | SSGミキサーモード (P) | PAN event + SSG mixer | ✅ 実装済み |
+| NOISE/NOISEW | SSGミキサー(P, MIX PORT 0x07)/ノイズ周波数(w) | REG_WRITE event (mixer 0x07 / noise) | ✅ 実装済み |
+| ENVPST | SSGソフトウェアエンベロープ設定 (E/@N経由, FA) | ssgApplyPreset() env部 + SSG_ENVELOPE event | ✅ 実装済み |
 | SSGOFF/SSGOF1 | SSG全消音 | allSoundOff() | ✅ 実装済み |
 | SSSUB3/SETPT | SSGトーン周波数設定 | ssgWriteFreq() | ✅ 実装済み |
 | **ソフトウェアLFO** ||||
