@@ -55,7 +55,7 @@ constexpr bool kFmCarrier[8][4] = { /* AL0-7 */ };
 ## ChipMode
 
 ```cpp
-enum class ChipMode { OPNA, OPM, OPNB };
+enum class ChipMode { OPNA, OPM, OPNB, OPN };
 ```
 
 トップレベルの正準 `ChipMode` は `include/mucom88/chip_backend_interface.hpp` で定義。
@@ -119,6 +119,48 @@ YM2608エミュレータの抽象インターフェース。ゲーム側で実�
 | `fmKeyOff(fmIndex)` | FM KEY OFF。デフォルト実装はwriteReg()ベース |
 | `setSsgMixScale(ssgScale)` | SSGミックスレベル設定（1.0=等倍、0.71≈-3dB）。デフォルト実装は何もしない |
 | `getSsgMixScale()` | 現在のSSGスケール値（デフォルト1.0） |
+
+---
+
+## FmEngineYmfm（ymfm_engine.hpp）
+
+optional ymfm OPNA `IFmEngine` 互換アダプタ。`MmlEngine` からはfmgen等の既存 `IFmEngine` 実装と同じAPIで扱える。
+このヘッダをincludeする利用側は、ymfmのヘッダとリンクを追加する必要がある。
+
+### セットアップ
+
+```cpp
+#include <mucom88/ymfm_engine.hpp>
+
+FmEngineYmfm fmEngine;
+fmEngine.setDacModel(true);
+fmEngine.setFidelity(FmEngineYmfm::FIDELITY_HIGH);  // 1 = high/MAX
+fmEngine.init(44100);
+
+MmlEngine engine;
+engine.init(&fmEngine, 44100, FmEngineYmfm::CHIP_CLOCK);
+```
+
+### 定数
+
+| 定数 | 説明 |
+|------|------|
+| `CHIP_MODE` | `ChipMode::OPNA` |
+| `CHIP_ENGINE` | `ChipEngine::Ymfm` |
+| `CHIP_CLOCK` | OPNA既定クロック `7987200` |
+| `FIDELITY_MED` | libmucom88 fidelity値 `0`。ymfm `OPN_FIDELITY_MED` |
+| `FIDELITY_HIGH` | libmucom88 fidelity値 `1`。ymfm `OPN_FIDELITY_MAX` |
+
+### メソッド
+
+| メソッド | 説明 |
+|---------|------|
+| `setDacModel(enabled)` | 後段YM3016 DACモデルを有効/無効化。既定はtrue |
+| `setFidelity(fidelity)` | `0=MED`, `1=HIGH/MAX`。既定はHIGH。native rateが変わるため `init()` 前に設定する |
+| `dacModelEnabled()` | DACモデル設定を返す |
+| `fidelity()` | 現在のfidelity値を返す |
+
+`FmEngineYmfm` は `loadAdpcmRom*`、`loadPcmDataToAdpcmB`、`loadVoiceTable*`、`playVoice`、`stopAdpcmB` も実装し、OPNAのADPCM-A/Bをymfmの外部メモリ読み出し経路で扱う。
 
 ---
 

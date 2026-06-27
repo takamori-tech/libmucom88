@@ -3,8 +3,8 @@
 MUCOM88互換 MMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ライブラリ（YM2608 / OPNA）。  
 A MUCOM88-compatible MML parser, sequencer, and ADPCM-B voice playback library for YM2608 (OPNA).
 
-ヘッダーオンリーC++17。外部依存なし。  
-Header-only C++17. No external dependencies.
+ヘッダーオンリーC++17。コアは外部依存なし。ymfm互換アダプタを使う場合のみ、利用側でymfmのヘッダとリンクを追加する。  
+Header-only C++17. The core has no external dependencies. The optional ymfm adapter requires the consumer to add ymfm headers and linkage.
 
 CMake の `INTERFACE` ターゲットとして組み込み可能で、単体ビルドでは付属ツールとヘッダースモークテストもビルドできる。  
 Can be consumed as a CMake `INTERFACE` target, and the standalone build also builds the bundled tool and header smoke test.
@@ -91,6 +91,7 @@ engine.playVoice(0);  // BGMのKトラックは自動抑制、FM/SSGは自動ダ
 | `include/mucom88/adpcm_a_encode.hpp` | YM2608 ADPCM-A リズム ROM エンコード / YM2608 ADPCM-A rhythm ROM encoder |
 | `fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー / FM patch definitions, frequency conversion, voice.dat parser |
 | `fm_engine_interface.hpp` | IFmEngine 抽象インターフェース / IFmEngine abstract interface |
+| `ymfm_engine.hpp` | optional ymfm OPNA `IFmEngine` 互換アダプタ / optional ymfm OPNA `IFmEngine` adapter |
 | `mml_parser.hpp` | MMLパーサー（MUCOM88形式、132曲検証済み）/ MML parser (MUCOM88 format, verified with 132 songs) |
 | `mml_engine.hpp` | MMLシーケンサー（Timer-B駆動、11ch、リバーブ、LFO、ポルタメント）/ MML sequencer (Timer-B driven, 11ch, reverb, LFO, portamento) |
 | `tools/drumkit_gen.cpp` | WAV から YM2608 ADPCM-A リズム ROM を生成する CLI / CLI that builds a YM2608 ADPCM-A rhythm ROM from WAV files |

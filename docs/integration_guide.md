@@ -6,8 +6,8 @@ MUCOM88互換のMMLパーサー＋シーケンサー＋ADPCM-Bボイス再生ラ
 ## 前提
 
 - C++17 以上
-- YM2608エミュレータ（fmgen）を自前で用意すること
-- libmucom88 自体はヘッダーオンリー（外部依存なし）
+- YM2608エミュレータ（fmgen または ymfm）を用意すること
+- libmucom88 のコアはヘッダーオンリー（外部依存なし）。`mucom88/ymfm_engine.hpp` を使う場合のみ、利用側でymfmのヘッダとリンクを追加する
 
 ## プロジェクトへの追加
 
@@ -29,12 +29,31 @@ target_include_directories(your_target PRIVATE vendor/libmucom88/include)
 |----------|------|
 | `mucom88/fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー |
 | `mucom88/fm_engine_interface.hpp` | IFmEngine 抽象インターフェース |
+| `mucom88/ymfm_engine.hpp` | optional ymfm OPNA `IFmEngine` 互換アダプタ |
 | `mucom88/mml_parser.hpp` | MMLパーサー（MucFile構造体を出力） |
 | `mucom88/mml_engine.hpp` | MMLシーケンサー（Timer-B駆動、11チャンネル制御） |
 
 ## IFmEngine の実装
 
 ゲーム側で YM2608 エミュレータをラップして IFmEngine を実装する必要がある。
+ymfm を使う場合は、libmucom88付属の `FmEngineYmfm` をそのまま利用できる。
+
+### ymfm OPNA アダプタ
+
+```cpp
+#include <mucom88/ymfm_engine.hpp>
+
+FmEngineYmfm fmEngine;
+fmEngine.setDacModel(true);                         // 後段YM3016 DACモデル
+fmEngine.setFidelity(FmEngineYmfm::FIDELITY_HIGH);  // 1 = high/MAX
+fmEngine.init(44100);
+
+MmlEngine engine;
+engine.init(&fmEngine, 44100, FmEngineYmfm::CHIP_CLOCK);
+```
+
+`FmEngineYmfm` は `IFmEngine` を実装するため、`MmlEngine`、Rich SE用2チップ構成、ADPCM-BボイスAPIはfmgen実装と同じ呼び出し形で使える。
+利用側はymfmの `src` ディレクトリをinclude pathに追加し、`ymfm_adpcm.cpp`、`ymfm_misc.cpp`、`ymfm_opn.cpp`、`ymfm_ssg.cpp` をリンクする。
 
 ### 必須メソッド
 
