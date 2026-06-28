@@ -36,6 +36,20 @@ IFmEngine ── 抽象インターフェース（利用側で実装、または
 - **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
 - **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
 
+## 直近ハンドオーバー（2026-06-29 / #95 ymfm key-on retrigger deferral）
+
+- **コミット**: `c0d9f748c3c6434049f4093f3cce281cbf6bc311 Add ymfm key-on retrigger deferral`（`origin/main` にpush済み）。
+- **直前コミット**: `e8b6bc3 Use soft limiter for MML mixed output`（同じくpush済み）。
+- **Issue**: `takamori-tech/libmucom88#95`。進捗コメント: `https://github.com/takamori-tech/libmucom88/issues/95#issuecomment-4826711317`。
+- **目的**: optional `FmEngineYmfm` で同一 FM channel の key-on retrigger が欠落する問題を、ymfm write path 側で deferral して補正する。既存 API は変更しない。
+- **libmucom88 検証済み**: `cmake --build build` 成功、`ctest --test-dir build --output-on-failure` 成功、MUCOM88V `vendor/ymfm` を使った optional ymfm smoke compile/run 成功。
+- **MUCOM88V 取り込み済み**: `1a7a677f88347bc56baefac1b85e6f6e6a2be658 Bump libmucom88 for ymfm retrigger deferral`（MUCOM88V `origin/main` にpush済み）。`vendor/libmucom88` は `bdf069b -> c0d9f74`。
+- **MUCOM88V 親側の重要な切り分け**: `muc_regtest` の avgRMS gate 失敗は libmucom88 退行ではなく、MUCOM88V `OpnaEngine` default が `Ymfm` になったことによる backend drift。過去ドキュメント上、`muc_regtest` と MIDI golden は fmgen oracle。
+- **MUCOM88V 親側修正**: `muc_regtest` と `muc_miditest` は `FmEngineType::Fmgen` を明示指定。`muc_regtest` は `vendor/mucom88` が fmgen OPNA symbols を持つため direct `fmgen` link を外し、regtest 限定で `MUCOM88V_FMGENBACKEND_NO_STEMS` により `FmgenBackend::mixStemChunk()` を no-op 化。
+- **MUCOM88V 検証済み**: `./scripts/verify.sh --clean` PASS。`muc_regtest -sec 20`: `Files: 127 OK, 5 COMPILE FAILED`, `Mean 1.002`, `Median 1.002`, `>=0.8: 127 (100%)`。`muc_miditest --compare`: `PASS=18 FAIL=0`。
+- **consumer 指示**: MUCOM88V / CLAUDIUS とも libmucom88 `c0d9f74` 以降を取り込む。consumer 側 regression/golden は backend default に依存させず、fmgen oracle のテストは明示 fmgen、ymfm 確認用テストは明示 ymfm を選ぶ。CLAUDIUS には MUCOM88V のテスト修正を機械的にコピーせず、CLAUDIUS 側 oracle を確認してから固定する。
+- **別 issue 化済み未対応範囲**: no-data guard `#96`、ADPCM calibration `#97`、PolyDecimator `#98`。
+
 ## 直近ハンドオーバー（2026-06-28 / engine別Tuned出力プリセットの正本化）
 
 - **コミット**: `93e1cac Add shared output tuning defaults`（`origin/main` にpush済み）。
