@@ -505,7 +505,7 @@ enum class FadeAction {
 | `getSsgMixScale()` | 現在のSSGスケール値 |
 | `setOutputProfile(profile)` | Native/Tuned出力プリセットを適用する。既定はTuned |
 | `outputProfile()` | 現在の出力プリセット |
-| `setOutputGain(gain)` | 出力ゲイン設定。`renderMixed()` でBGM PCMにゲインを掛ける。Richモード時はBGMのみに適用しSEは等倍で加算（ヘッドルーム確保）。Tuned既定値はengine別に `chip_output_tuning.hpp` で定義。play()/stop()でリセットされない |
+| `setOutputGain(gain)` | 出力ゲイン設定。`renderMixed()` でBGM PCMにゲインを掛け、最終出力を `softLimit16()` で処理する。Richモード時はBGMのみにゲインを適用しSEは等倍で加算。Tuned既定値はengine別に `chip_output_tuning.hpp` で定義。play()/stop()でリセットされない |
 | `getOutputGain()` | 現在の出力ゲイン値 |
 | `setGlobalAttenuation(att)` | ダッキング減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A/B: スケーリング。マスターボリューム・フェードと独立に加算される |
 | `globalAttenuation()` | 合算減衰値（masterAtt + bgmAtt + fadeAtt + duckAtt） |

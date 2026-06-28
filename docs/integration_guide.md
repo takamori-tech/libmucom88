@@ -427,14 +427,14 @@ engine.setOutputProfile(ChipOutputProfile::Tuned);
 // 必要な場合のみ、プリセット値を上書きする
 engine.setOutputGain(1.2f);
 
-// renderMixed()内で自動的にゲイン適用+クリッピングされる
+// renderMixed()内で自動的にゲイン適用+ソフトリミットされる
 engine.renderMixed(out, frameCount);
 ```
 
 出力ゲインは `play()` / `stop()` でリセットされない（ゲーム設定として永続）。
 マスターボリューム・フェード・ダッキングとは独立に、BGM PCM出力に乗算適用される。
 **Richモード時はBGMのみにゲインを適用し、SEは等倍で加算する。**
-これにより2チップ混合時のクリッピングを防止する。SEの音量は `setSeVolume()` で調整可能。
+最終出力段は `softLimit16()` で大音量ピークを処理する。SEの音量は `setSeVolume()` で調整可能。
 既定プリセット: **Tuned**。
 
 ![Rich Mode Mixing](diagrams/rich_mode_mixing.svg)

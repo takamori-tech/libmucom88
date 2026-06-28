@@ -702,7 +702,7 @@ public:
     }
 
     // ── 出力ゲイン ──────────────────────────────────
-    // renderMixed() の最終段で PCM にゲインを適用しクリッピング。
+    // renderMixed() の最終段で PCM にゲインを適用しソフトリミット。
     // fmgenの出力レベル補正（例: 2.0倍）等に使用。
     // play()/stop()でリセットされない（ゲームのオーディオ設定として永続）。
     void setOutputGain(float gain) { m_outputGain = gain; }
@@ -964,17 +964,16 @@ public:
                 int16_t seBuf[32] = {};
                 m_seEngine->generateInterleaved(seBuf, n);
                 for (uint32_t i = 0; i < n * 2; i++) {
-                    int32_t bgm = static_cast<int32_t>(bgmBuf[i]);
-                    if (m_outputGain != 1.0f) bgm = static_cast<int32_t>(bgm * m_outputGain);
-                    int32_t mixed = bgm + static_cast<int32_t>(seBuf[i]);
-                    out[offset * 2 + i] = static_cast<int16_t>(std::clamp(mixed, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
+                    const double bgm = static_cast<double>(bgmBuf[i]) * static_cast<double>(m_outputGain);
+                    const double mixed = bgm + static_cast<double>(seBuf[i]);
+                    out[offset * 2 + i] = static_cast<int16_t>(softLimit16(mixed));
                 }
             } else {
                 // Classicモード: BGMのみ（+ ゲイン適用）
                 if (m_outputGain != 1.0f) {
                     for (uint32_t i = 0; i < n * 2; i++) {
-                        int32_t s = static_cast<int32_t>(bgmBuf[i] * m_outputGain);
-                        out[offset * 2 + i] = static_cast<int16_t>(std::clamp(s, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
+                        const double s = static_cast<double>(bgmBuf[i]) * static_cast<double>(m_outputGain);
+                        out[offset * 2 + i] = static_cast<int16_t>(softLimit16(s));
                     }
                 } else {
                     std::memcpy(out + offset * 2, bgmBuf, n * 2 * sizeof(int16_t));
