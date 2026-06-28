@@ -55,6 +55,10 @@ public:
         m_inner->mixChunk(interleavedLR, frameCount);
     }
 
+    [[nodiscard]] bool mixStemChunk(ChipStemFrame* frames, uint32_t frameCount) noexcept override {
+        return m_inner->mixStemChunk(frames, frameCount);
+    }
+
     void setSsgBalanceLinear(float ratio) noexcept override {
         m_inner->setSsgBalanceLinear(ratio);
     }
@@ -84,6 +88,10 @@ public:
 
     void setFidelity(int fidelity) noexcept override {
         m_inner->setFidelity(fidelity);
+    }
+
+    void setCompatibilityOutput(bool enabled) noexcept override {
+        m_inner->setCompatibilityOutput(enabled);
     }
 
     void setSectionGainSsg(float gain) noexcept override {

@@ -93,6 +93,14 @@ struct ChannelMaskSpec {
     static constexpr ChannelMaskSpec allAudible() noexcept { return {}; }
 };
 
+struct ChipStemFrame {
+    int32_t main[2] {};
+    int32_t fm[6][2] {};
+    int32_t ssg[3][2] {};
+    int32_t rhythm[2] {};
+    int32_t adpcmB[2] {};
+};
+
 // =============================================================================
 // IChipBackend: 単一チップバックエンド抽象
 //
@@ -113,6 +121,12 @@ public:
     // fmgen の Mix は加算合成のため、呼び出し前に必ずゼロ初期化すること。
     // frameCount>1 を呼ぶ場合も要素数・ゼロ初期化・位相連続性を保つ。
     virtual void mixChunk(int32_t* interleavedLR, uint32_t frameCount) noexcept = 0;
+    [[nodiscard]] virtual bool mixStemChunk(ChipStemFrame* frames, uint32_t frameCount) noexcept
+    {
+        (void)frames;
+        (void)frameCount;
+        return false;
+    }
     virtual void setSsgBalanceLinear(float ratio) noexcept = 0;
     virtual void setChannelMask(const ChannelMaskSpec& spec) noexcept = 0;
 
@@ -138,6 +152,10 @@ public:
     // ymfm リサンプリング忠実度(0=MED / 1=MAX 既定)。内部リサンプル backend(ymfm)のみ override。
     // fmgen 等は no-op 継承=無変更。fidelity 変更は native rate を変えるため backend 再init が前提。
     virtual void setFidelity(int fidelity) noexcept { (void)fidelity; }
+
+    // 互換出力段。Native では無効、Calibrated では既存の fmgen/OpenMUCOM88 向け補正を有効化する。
+    // fmgen 等は no-op 継承=無変更。内部 mix backend(ymfm)のみ output gain/limiter を切り替える。
+    virtual void setCompatibilityOutput(bool enabled) noexcept { (void)enabled; }
 
     // SSG セクション音量トリム。内部加算 backend(ymfm)のみ override し、decoded 経路(fmgen)は
     // no-op 継承=SSG 既存経路不変。reg 域ではなく method-domain の線形乗算に限定する。
