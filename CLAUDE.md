@@ -36,6 +36,19 @@ IFmEngine ── 抽象インターフェース（利用側で実装、または
 - **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
 - **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
 
+## 直近ハンドオーバー（2026-06-29 / #97 FmEngineYmfm ADPCM L1 calibration）
+
+- **コミット**: `9aa1f42428f940d7c1295da6b6d6779764367342 Apply ymfm ADPCM calibration in compatibility mode`（`origin/main` にpush済み）。
+- **Issue**: `takamori-tech/libmucom88#97`。実装コメント: `https://github.com/takamori-tech/libmucom88/issues/97#issuecomment-4826823901`。
+- **目的**: CLAUDIUS などの consumer が optional `FmEngineYmfm` を使うだけで、`MmlEngine` default `Tuned` 経由なら MUCOM88V の ymfm Tuned と同じ ADPCM-A/B L1 音量補正を受けられるようにする。
+- **実装**: `chip_calibration.hpp` に `calibrateOpnaAdpcmRegister()` を追加。OPNA ADPCM-A `port0/0x11` は `kYmfmCalibration.adpcmATlOffset=12` を total level から減算し 0..63 clamp。ADPCM-B `port1/0x0B` は `kYmfmCalibration.adpcmBGain=1.044` を乗算し 0..255 clamp。
+- **既存経路の整理**: `NormalizingChipBackend::writeReg()` の既存 ADPCM-A/B 補正を同 helper 経由へ移し、重複を排除。fmgen calibration は identity のため既存 fmgen 経路は維持。
+- **FmEngineYmfm 適用点**: `FmEngineYmfm::writeReg()` と `playVoice()` の ADPCM-B volume write で、`compatibilityOutput` 有効時のみ同 helper を適用。Native profile / compatibility off では raw register write のまま。
+- **検証済み**: `cmake --build build` PASS、`ctest --test-dir build --output-on-failure` PASS（3/3）、MUCOM88V `vendor/ymfm` headers を使った `ymfm_engine.hpp` compile smoke PASS。
+- **consumer 指示（CLAUDIUS）**: `vendor/libmucom88` を `9aa1f42428f940d7c1295da6b6d6779764367342` へ更新する。`FmEngineYmfm + MmlEngine` default `Tuned` なら追加設定なしで ADPCM-A/B 補正が有効になる。通常ビルドと音声 smoke/regression で確認する。
+- **consumer 指示（MUCOM88V）**: `vendor/libmucom88` を同 commit へ更新する。`muc_regtest` / MIDI golden は引き続き fmgen oracle 明示固定を維持し、`./scripts/verify.sh --clean` で submodule bump を検証する。MUCOM88V production `YmfmBackend` の移植拡大は今回しない。
+- **非対象として残す範囲**: PolyDecimator、ADPCM-A/B calibration の追加再調整、ADPCM no-data guard、MUCOM88V production `YmfmBackend` への移植拡大。
+
 ## 直近ハンドオーバー（2026-06-29 / #95 ymfm key-on retrigger deferral）
 
 - **コミット**: `c0d9f748c3c6434049f4093f3cce281cbf6bc311 Add ymfm key-on retrigger deferral`（`origin/main` にpush済み）。
@@ -48,7 +61,7 @@ IFmEngine ── 抽象インターフェース（利用側で実装、または
 - **MUCOM88V 親側修正**: `muc_regtest` と `muc_miditest` は `FmEngineType::Fmgen` を明示指定。`muc_regtest` は `vendor/mucom88` が fmgen OPNA symbols を持つため direct `fmgen` link を外し、regtest 限定で `MUCOM88V_FMGENBACKEND_NO_STEMS` により `FmgenBackend::mixStemChunk()` を no-op 化。
 - **MUCOM88V 検証済み**: `./scripts/verify.sh --clean` PASS。`muc_regtest -sec 20`: `Files: 127 OK, 5 COMPILE FAILED`, `Mean 1.002`, `Median 1.002`, `>=0.8: 127 (100%)`。`muc_miditest --compare`: `PASS=18 FAIL=0`。
 - **consumer 指示**: MUCOM88V / CLAUDIUS とも libmucom88 `c0d9f74` 以降を取り込む。consumer 側 regression/golden は backend default に依存させず、fmgen oracle のテストは明示 fmgen、ymfm 確認用テストは明示 ymfm を選ぶ。CLAUDIUS には MUCOM88V のテスト修正を機械的にコピーせず、CLAUDIUS 側 oracle を確認してから固定する。
-- **別 issue 化済み未対応範囲**: no-data guard `#96`、ADPCM calibration `#97`、PolyDecimator `#98`。
+- **別 issue 化済み未対応範囲**: no-data guard `#96`、PolyDecimator `#98`。ADPCM calibration `#97` は `9aa1f42` で libmucom88 `FmEngineYmfm` consumer 向け L1 補正を実装済み（追加再調整は非対象）。
 
 ## 直近ハンドオーバー（2026-06-28 / engine別Tuned出力プリセットの正本化）
 
