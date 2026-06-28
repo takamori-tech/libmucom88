@@ -36,6 +36,17 @@ IFmEngine ── 抽象インターフェース（利用側で実装、または
 - **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
 - **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
 
+## 直近ハンドオーバー（2026-06-28 / engine別Tuned出力プリセットの正本化）
+
+- **コミット**: `93e1cac Add shared output tuning defaults`（`origin/main` にpush済み）。
+- **目的**: MUCOM88V OUTPUTタブで作ったengine別 `Tuned` プリセットをゲーム側CLAUDIUSでも既定適用できるよう、出力プリセット定義をlibmucom88の正本へ移した。
+- **追加API/正本**: `include/mucom88/chip_output_tuning.hpp`。`ChipOutputProfile::{Native,Tuned}`、`ChipOutputTuning`、`chipOutputTuningFor()`、`defaultChipOutputTuningFor()`、`effectiveSsgMixScaleFor()` を追加。Tuned値は fmgen=`SSG -3.0dB / output 1.0x / compatibility off`、ymfm=`SSG -4.0dB / output +2.5dB / compatibility on(1.9x + soft limiter)`。
+- **MmlEngine既定**: `MmlEngine::init()` は `defaultChipOutputProfile()`（現状 `Tuned`）を適用する。`setOutputProfile()` / `outputProfile()` を追加し、Nativeへ戻すことも可能。Rich SEチップにもBGM側と同じSSG mix / compatibilityOutputを同期する。
+- **IFmEngine / ymfm**: `IFmEngine::chipEngine()`（既定 `ChipEngine::Fmgen`）、`setCompatibilityOutput()`、`compatibilityOutputEnabled()` を追加。`FmEngineYmfm` は `ChipEngine::Ymfm` を返し、compatibilityOutput有効時に `chip_output_tuning.hpp` のTuned互換段を適用する。
+- **ドキュメント**: `README.md`、`docs/api_reference.md`、`docs/integration_guide.md` に `chip_output_tuning.hpp`、Tuned既定、`setOutputProfile()`、互換出力段を反映。古い `setOutputGain(2.0f)` 推奨例は、プリセット値の必要時上書き例へ変更済み。
+- **検証済み**: standalone `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -- -j8 && ctest --test-dir build --output-on-failure` 成功。CLAUDIUS側では `6bbca29 Use libmucom88 tuned output defaults` で `vendor/libmucom88` を `93e1cac` へ更新し、手動 `setOutputGain(2.0f)` を削除、`./scripts/build_game.sh --release -j8` 成功・push済み。
+- **次回注意**: MUCOM88V側の `vendor/libmucom88` も正本 `93e1cac` へ合わせる。MUCOM88VのOUTPUT UI側に残る同方向のローカル変更は、libmucom88正本の `chip_output_tuning.hpp` 参照へ整理してからcommit/pushする。
+
 ## 直近ハンドオーバー（2026-06-27 / ymfm OPNA互換アダプタ）
 
 - **コミット**: `bc3796c Add optional ymfm OPNA engine adapter`（`origin/main` にpush済み）。
