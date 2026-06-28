@@ -153,7 +153,7 @@ public:
     // fmgen 等は no-op 継承=無変更。fidelity 変更は native rate を変えるため backend 再init が前提。
     virtual void setFidelity(int fidelity) noexcept { (void)fidelity; }
 
-    // 互換出力段。Native では無効、Calibrated では既存の fmgen/OpenMUCOM88 向け補正を有効化する。
+    // 互換出力段。Native では無効、Tuned では既存の fmgen/OpenMUCOM88 向け補正を有効化する。
     // fmgen 等は no-op 継承=無変更。内部 mix backend(ymfm)のみ output gain/limiter を切り替える。
     virtual void setCompatibilityOutput(bool enabled) noexcept { (void)enabled; }
 

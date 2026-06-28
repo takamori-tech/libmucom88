@@ -117,8 +117,11 @@ YM2608エミュレータの抽象インターフェース。ゲーム側で実�
 | `setFrequency(fmIndex, noteNum)` | FM周波数設定。MIDIノート→F-Number/Block計算→0xA4/0xA0ラッチ。デフォルト実装はwriteReg()ベース |
 | `fmKeyOn(fmIndex)` | FM KEY ON（全スロット）。デフォルト実装はwriteReg()ベース |
 | `fmKeyOff(fmIndex)` | FM KEY OFF。デフォルト実装はwriteReg()ベース |
+| `chipEngine()` | engine識別子を返す。既定は `ChipEngine::Fmgen`。共有出力プリセット選択に使用 |
 | `setSsgMixScale(ssgScale)` | SSGミックスレベル設定（1.0=等倍、0.71≈-3dB）。デフォルト実装は何もしない |
 | `getSsgMixScale()` | 現在のSSGスケール値（デフォルト1.0） |
+| `setCompatibilityOutput(enabled)` | backend固有の互換出力段を有効/無効化。デフォルト実装は何もしない |
+| `compatibilityOutputEnabled()` | 互換出力段の状態を返す。デフォルトfalse |
 
 ---
 
@@ -157,6 +160,8 @@ engine.init(&fmEngine, 44100, FmEngineYmfm::CHIP_CLOCK);
 |---------|------|
 | `setDacModel(enabled)` | 後段YM3016 DACモデルを有効/無効化。既定はtrue |
 | `setFidelity(fidelity)` | `0=MED`, `1=HIGH/MAX`。既定はHIGH。native rateが変わるため `init()` 前に設定する |
+| `setCompatibilityOutput(enabled)` | Tuned互換出力段を有効/無効化。ymfmではbackend内で `1.9x` gain とsoft limiterを適用する |
+| `compatibilityOutputEnabled()` | 互換出力段の状態を返す |
 | `dacModelEnabled()` | DACモデル設定を返す |
 | `fidelity()` | 現在のfidelity値を返す |
 
@@ -176,6 +181,27 @@ engine.init(&fmEngine, 44100, FmEngineYmfm::CHIP_CLOCK);
 |---------|------|
 | `setDacModel(bool enabled)` | 後段 YM3016 DAC モデル（companding 再量子化）の有効/無効。内部読出 backend（ymfm）のみ override。decoded 経路（fmgen 等）は no-op 既定を継承＝無改変。設定は audio パス外で行う |
 | `setFidelity(int fidelity)` | ymfm リサンプリング忠実度（0=MED / 1=MAX 既定）。CPU 制約のある利用者（例: Raspberry Pi 4B 上のゲーム）が MED を選べる。**忠実度変更は native rate を変えるため backend 再init が前提**。fmgen 等は no-op 継承＝無変更 |
+| `setCompatibilityOutput(bool enabled)` | Nativeでは無効、Tunedでは既存のfmgen/OpenMUCOM88向け補正を有効化する互換出力段。内部mix backend（ymfm等）のみoutput gain/limiterを切り替える |
+
+---
+
+## ChipOutputTuning（chip_output_tuning.hpp）
+
+engine別の出力プリセット定義。`MmlEngine` は既定で `ChipOutputProfile::Tuned` を適用する。
+
+| 項目 | 説明 |
+|------|------|
+| `ChipOutputProfile::Native` | emulator/chip native出力。互換出力段、追加output gain、limiterを無効化 |
+| `ChipOutputProfile::Tuned` | OpenMUCOM88/fmgen基準へ寄せる既定プリセット |
+| `chipOutputTuningFor(engine, profile)` | engine/profile別のSSG mix、ADPCM A/B gain、output gain、互換出力段設定を返す |
+| `effectiveSsgMixScaleFor(engine, profile)` | IFmEngine向けにL1 calibrationを畳み込んだSSG mix scaleを返す |
+
+Tuned既定値:
+
+| Engine | SSG Mix | Output Gain | Compatibility Output |
+|--------|--------:|------------:|----------------------|
+| `ChipEngine::Fmgen` | -3.0 dB | 1.0x | Off |
+| `ChipEngine::Ymfm` | -4.0 dB | +2.5 dB | On (`1.9x` + soft limiter) |
 
 ---
 
@@ -477,7 +503,9 @@ enum class FadeAction {
 |---------|------|
 | `setSsgMixScale(ssgScale)` | SSG出力のリニアスケール設定。1.0=等倍、0.71≈-3dB（MUCOM88Vデフォルト）。IFmEngine にパススルー |
 | `getSsgMixScale()` | 現在のSSGスケール値 |
-| `setOutputGain(gain)` | 出力ゲイン設定。`renderMixed()` でBGM PCMにゲインを掛ける。Richモード時はBGMのみに適用しSEは等倍で加算（ヘッドルーム確保）。デフォルト1.0。play()/stop()でリセットされない |
+| `setOutputProfile(profile)` | Native/Tuned出力プリセットを適用する。既定はTuned |
+| `outputProfile()` | 現在の出力プリセット |
+| `setOutputGain(gain)` | 出力ゲイン設定。`renderMixed()` でBGM PCMにゲインを掛ける。Richモード時はBGMのみに適用しSEは等倍で加算（ヘッドルーム確保）。Tuned既定値はengine別に `chip_output_tuning.hpp` で定義。play()/stop()でリセットされない |
 | `getOutputGain()` | 現在の出力ゲイン値 |
 | `setGlobalAttenuation(att)` | ダッキング減衰設定。FM: TL加算(0-127)、SSG: att/4、ADPCM-A/B: スケーリング。マスターボリューム・フェードと独立に加算される |
 | `globalAttenuation()` | 合算減衰値（masterAtt + bgmAtt + fadeAtt + duckAtt） |

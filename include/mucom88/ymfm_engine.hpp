@@ -11,6 +11,7 @@
 #pragma once
 
 #include "chip_backend_interface.hpp"
+#include "chip_output_tuning.hpp"
 #include "fm_engine_interface.hpp"
 
 #include <algorithm>
@@ -37,6 +38,8 @@ public:
 
     FmEngineYmfm() : m_chip(*this) {}
 
+    [[nodiscard]] ChipEngine chipEngine() const noexcept override { return CHIP_ENGINE; }
+
     void setDacModel(bool enabled) noexcept { m_dacModelEnabled = enabled; }
 
     // libmucom88 convention: 0=MED, 1=MAX/high. Values outside the range
@@ -48,6 +51,18 @@ public:
 
     [[nodiscard]] bool dacModelEnabled() const noexcept { return m_dacModelEnabled; }
     [[nodiscard]] int fidelity() const noexcept { return m_fidelity; }
+
+    void setCompatibilityOutput(bool enabled) noexcept override
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_compatibilityOutput = enabled;
+    }
+
+    [[nodiscard]] bool compatibilityOutputEnabled() const noexcept override
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        return m_compatibilityOutput;
+    }
 
     void setSsgMixScale(float ssgScale) noexcept override
     {
@@ -105,8 +120,11 @@ public:
                 }
 
                 const int32_t ssg = scaleSsg(output.data[2]);
-                m_lastL = clamp16(fmAdpcmL + ssg);
-                m_lastR = clamp16(fmAdpcmR + ssg);
+                const ChipOutputTuning tuning = m_compatibilityOutput
+                    ? chipOutputTuningFor(CHIP_ENGINE, ChipOutputProfile::Tuned)
+                    : ChipOutputTuning {};
+                m_lastL = applyCompatibilityOutput16(static_cast<double>(fmAdpcmL) + ssg, tuning);
+                m_lastR = applyCompatibilityOutput16(static_cast<double>(fmAdpcmR) + ssg, tuning);
             }
 
             buf[i * 2] = m_lastL;
@@ -277,6 +295,7 @@ private:
     bool m_hasAdpcmRom = false;
     bool m_dacModelEnabled = true;
     int m_fidelity = FIDELITY_HIGH;
+    bool m_compatibilityOutput = false;
     float m_ssgMixScale = DEFAULT_SSG_MIX_SCALE;
 
     std::vector<uint8_t> m_adpcmARom;

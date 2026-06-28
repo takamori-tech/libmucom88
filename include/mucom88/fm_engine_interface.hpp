@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include "chip_backend_interface.hpp"
 #include "fm_common.hpp"
 
 class IFmEngine
@@ -30,6 +31,10 @@ public:
 
     // リセット
     virtual void reset() noexcept = 0;
+
+    // Engine identity for shared output-stage defaults. Existing fmgen-style
+    // consumers get the historical default without needing to override.
+    [[nodiscard]] virtual ChipEngine chipEngine() const noexcept { return ChipEngine::Fmgen; }
 
     // ADPCM-A ROM ロード（リズム音源用）
     [[nodiscard]] virtual bool loadAdpcmRom(const std::string& path) = 0;
@@ -61,6 +66,12 @@ public:
     // fmgen: SetVolumePSG(dB) で実装
     virtual void setSsgMixScale(float /*ssgScale*/) noexcept {}
     virtual float getSsgMixScale() const noexcept { return 1.0f; }
+
+    // Optional backend-local compatibility stage. Implementations that cannot
+    // express it may keep the no-op default; MmlEngine still applies shared
+    // SSG/output-gain defaults around them.
+    virtual void setCompatibilityOutput(bool /*enabled*/) noexcept {}
+    [[nodiscard]] virtual bool compatibilityOutputEnabled() const noexcept { return false; }
 
     // ── FM音色適用（MUCOM88 STENV互換）──────────────────
     // fmIndex: FM index (0-5)。port/offsetは内部で計算。

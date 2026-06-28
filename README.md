@@ -89,6 +89,7 @@ engine.playVoice(0);  // BGMのKトラックは自動抑制、FM/SSGは自動ダ
 | `CMakeLists.txt` | ヘッダーオンリー `mucom88::mucom88` ターゲット、付属ツール/テストの単体ビルド / Header-only `mucom88::mucom88` target plus standalone tool/test build |
 | `include/mucom88/adpcm_a_decode.hpp` | YM2608 ADPCM-A リズム ROM デコード / YM2608 ADPCM-A rhythm ROM decoder |
 | `include/mucom88/adpcm_a_encode.hpp` | YM2608 ADPCM-A リズム ROM エンコード / YM2608 ADPCM-A rhythm ROM encoder |
+| `chip_output_tuning.hpp` | engine別のNative/Tuned出力プリセット / Engine-specific Native/Tuned output presets |
 | `fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー / FM patch definitions, frequency conversion, voice.dat parser |
 | `fm_engine_interface.hpp` | IFmEngine 抽象インターフェース / IFmEngine abstract interface |
 | `ymfm_engine.hpp` | optional ymfm OPNA `IFmEngine` 互換アダプタ / optional ymfm OPNA `IFmEngine` adapter |

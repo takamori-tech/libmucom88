@@ -404,14 +404,28 @@ engine.fadeIn(1.5f);    // 1.5秒かけてマスターボリュームまで復�
 engine.resetFade();  // マスターボリュームに即時復帰
 ```
 
-### 出力ゲイン
+### 出力プリセット / 出力ゲイン
 
-`renderMixed()` でBGM PCMサンプルにゲインを掛ける。
-fmgenの出力レベルがint16範囲の約25%のため、2.0倍のゲインで補正する用途等に使用:
+`MmlEngine::init()` は既定で `ChipOutputProfile::Tuned` を適用する。
+Tuned値は `mucom88/chip_output_tuning.hpp` に集約され、`IFmEngine::chipEngine()`
+に応じてSSG mix、出力ゲイン、ymfm互換出力段を設定する。
+
+既定値から明示的に切り替える場合:
 
 ```cpp
-// fmgen出力レベル補正（初期化時に1回）
-engine.setOutputGain(2.0f);  // 2.0倍 = +6dB
+// emulator/chip native寄りの出力に戻す
+engine.setOutputProfile(ChipOutputProfile::Native);
+
+// Tunedへ戻す
+engine.setOutputProfile(ChipOutputProfile::Tuned);
+```
+
+`renderMixed()` でBGM PCMサンプルにゲインを掛ける。プリセット適用後に、
+ゲーム固有の最終調整として `setOutputGain()` で上書きできる:
+
+```cpp
+// 必要な場合のみ、プリセット値を上書きする
+engine.setOutputGain(1.2f);
 
 // renderMixed()内で自動的にゲイン適用+クリッピングされる
 engine.renderMixed(out, frameCount);
@@ -421,7 +435,7 @@ engine.renderMixed(out, frameCount);
 マスターボリューム・フェード・ダッキングとは独立に、BGM PCM出力に乗算適用される。
 **Richモード時はBGMのみにゲインを適用し、SEは等倍で加算する。**
 これにより2チップ混合時のクリッピングを防止する。SEの音量は `setSeVolume()` で調整可能。
-デフォルト値: **1.0**（ゲインなし、現行動作と後方互換）。
+既定プリセット: **Tuned**。
 
 ![Rich Mode Mixing](diagrams/rich_mode_mixing.svg)
 

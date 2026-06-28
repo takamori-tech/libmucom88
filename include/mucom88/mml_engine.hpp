@@ -22,6 +22,7 @@
 #include <cmath>
 #include <unordered_map>
 #include <fstream>
+#include "chip_output_tuning.hpp"
 #include "mml_parser.hpp"
 #include "fm_engine_interface.hpp"
 
@@ -105,6 +106,7 @@ public:
         m_patchMap[0] = makeDefaultPatch(0);
         for (auto& slot : m_seSlots) slot = SeSlot{};
         m_seAllocCounter = 0;
+        applyOutputProfile();
     }
 
     // チップ動作クロック(Hz)をライブ更新する（Issue #89）。init() と異なり再生位置・状態を
@@ -542,8 +544,10 @@ public:
                 m_seEngine->writeReg(0, REG_SSG_MIXER, 0x3F);
                 m_seEngine->writeReg(0, REG_TIMER_CTRL, 0x3A);
                 // BGMチップと同じSSGミックスバランスを適用
-                if (m_engine)
+                if (m_engine) {
                     m_seEngine->setSsgMixScale(m_engine->getSsgMixScale());
+                    m_seEngine->setCompatibilityOutput(m_engine->compatibilityOutputEnabled());
+                }
             }
         } else {
             m_seEngine = nullptr;
@@ -703,6 +707,12 @@ public:
     // play()/stop()でリセットされない（ゲームのオーディオ設定として永続）。
     void setOutputGain(float gain) { m_outputGain = gain; }
     [[nodiscard]] float getOutputGain() const { return m_outputGain; }
+
+    void setOutputProfile(ChipOutputProfile profile) {
+        m_outputProfile = profile;
+        applyOutputProfile();
+    }
+    [[nodiscard]] ChipOutputProfile outputProfile() const noexcept { return m_outputProfile; }
 
     // ── マスターボリューム ─────────────────────────────
     // vol: 0.0（無音）〜 1.0（最大）。FM TL減衰値に内部変換。
@@ -1295,6 +1305,7 @@ private:
     int         m_seAtt      = 0;    // SE専用ボリューム減衰（0=最大、127=無音）
     int         m_voiceAtt   = 0;    // ボイス専用減衰（0=最大、127=無音）
     float       m_outputGain = 1.0f; // 出力ゲイン（renderMixed最終段、play()/stop()でリセットしない）
+    ChipOutputProfile m_outputProfile = defaultChipOutputProfile();
     int         m_fadeAtt    = 0;    // フェードアウト減衰（0=フェードなし、127=無音）
     int         m_duckAtt    = 0;    // ダッキング減衰（0=ダッキングなし）
     // フェードアウト/イン状態
@@ -1312,6 +1323,19 @@ private:
     std::atomic<VoiceDuckState> m_voiceDuckState{VoiceDuckState::Idle};
     static_assert(std::atomic<VoiceDuckState>::is_always_lock_free,
                   "VoiceDuckState must be lock-free for real-time audio thread");
+
+    void applyOutputProfile()
+    {
+        const ChipEngine engine = m_engine ? m_engine->chipEngine() : ChipEngine::Fmgen;
+        const ChipOutputTuning tuning = chipOutputTuningFor(engine, m_outputProfile);
+        setSsgMixScale(effectiveSsgMixScaleFor(engine, m_outputProfile));
+        setOutputGain(tuning.outputGain);
+        if (m_engine)
+            m_engine->setCompatibilityOutput(tuning.compatibilityOutput);
+        if (m_seEngine)
+            m_seEngine->setCompatibilityOutput(tuning.compatibilityOutput);
+    }
+
     bool        m_duckEnabled = false;   // ダッキング機能ON/OFF
     int         m_duckAttTarget = 20;    // 減衰量（FM TL加算値、20≈-15dB）
     uint32_t    m_duckReleaseSamples = 0;     // リリース時間（サンプル数）
@@ -2109,8 +2133,10 @@ private:
                     }
                     m_seEngine->writeReg(0, REG_SSG_MIXER, 0x3F);
                     m_seEngine->writeReg(0, REG_TIMER_CTRL, 0x3A);
-                    if (m_engine)
+                    if (m_engine) {
                         m_seEngine->setSsgMixScale(m_engine->getSsgMixScale());
+                        m_seEngine->setCompatibilityOutput(m_engine->compatibilityOutputEnabled());
+                    }
                 }
             }
         }
