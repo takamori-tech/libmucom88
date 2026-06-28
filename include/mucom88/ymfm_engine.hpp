@@ -86,6 +86,7 @@ public:
         m_accumulator = 0;
         m_lastL = 0;
         m_lastR = 0;
+        clearKeyDeferStateLocked();
 
         writeYm2608RegLocked(0, 0x2d, 0x00);  // Prescaler mode 0
         writeYm2608RegLocked(0, 0x29, 0x80);  // FM 6ch mode
@@ -99,6 +100,8 @@ public:
         std::lock_guard<std::mutex> lk(m_mutex);
         if (port == 1 && m_voiceRemainSamples.load(std::memory_order_acquire) > 0 && addr <= 0x0B)
             return;
+        if (port == 0 && addr == 0x28 && deferKeyOnRetriggerLocked(data))
+            return;
         writeYm2608RegLocked(port, addr, data);
     }
 
@@ -109,6 +112,7 @@ public:
             m_accumulator += m_chipRate;
             while (m_accumulator >= m_sampleRate) {
                 m_accumulator -= m_sampleRate;
+                applyDeferredKeyOnsLocked();
                 ymfm::ym2608::output_data output;
                 m_chip.generate(&output);
 
@@ -139,6 +143,7 @@ public:
         m_accumulator = 0;
         m_lastL = 0;
         m_lastR = 0;
+        clearKeyDeferStateLocked();
     }
 
     [[nodiscard]] bool loadAdpcmRom(const std::string& path) override
@@ -297,6 +302,10 @@ private:
     int m_fidelity = FIDELITY_HIGH;
     bool m_compatibilityOutput = false;
     float m_ssgMixScale = DEFAULT_SSG_MIX_SCALE;
+    bool m_keySawOff[6] { false, false, false, false, false, false };
+    bool m_keyPendingOn[6] { false, false, false, false, false, false };
+    uint8_t m_keyPendingData[6] { 0, 0, 0, 0, 0, 0 };
+    int m_keyDeferCountdown[6] { 0, 0, 0, 0, 0, 0 };
 
     std::vector<uint8_t> m_adpcmARom;
     std::vector<uint8_t> m_adpcmBRam;
@@ -322,6 +331,64 @@ private:
         const uint32_t base = (port == 0) ? 0u : 2u;
         m_chip.write(base, addr);
         m_chip.write(base + 1, data);
+    }
+
+    static int keyOnChannel(uint8_t data) noexcept
+    {
+        const int lo = static_cast<int>(data & 0x07);
+        if (lo < 3)
+            return lo;
+        if (lo >= 4 && lo <= 6)
+            return lo - 1;
+        return -1;
+    }
+
+    void clearKeyDeferStateLocked() noexcept
+    {
+        for (int ch = 0; ch < 6; ++ch) {
+            m_keySawOff[ch] = false;
+            m_keyPendingOn[ch] = false;
+            m_keyPendingData[ch] = 0;
+            m_keyDeferCountdown[ch] = 0;
+        }
+    }
+
+    bool deferKeyOnRetriggerLocked(uint8_t data) noexcept
+    {
+        const int ch = keyOnChannel(data);
+        if (ch < 0)
+            return false;
+
+        const uint8_t slots = static_cast<uint8_t>(data & 0xF0);
+        if (slots == 0) {
+            m_keyPendingOn[ch] = false;
+            m_keyDeferCountdown[ch] = 0;
+            m_keySawOff[ch] = true;
+            return false;
+        }
+
+        if (!m_keySawOff[ch])
+            return false;
+
+        m_keyPendingOn[ch] = true;
+        m_keyPendingData[ch] = data;
+        // ymfm samples FM key state once per FMSPO native generates.
+        // Defer by FMSPO+1 so same-batch key-off is observed before re-keying.
+        m_keyDeferCountdown[ch] = (m_fidelity == FIDELITY_HIGH) ? 19 : 7;
+        return true;
+    }
+
+    void applyDeferredKeyOnsLocked() noexcept
+    {
+        for (int ch = 0; ch < 6; ++ch) {
+            if (m_keyDeferCountdown[ch] > 0 && --m_keyDeferCountdown[ch] == 0) {
+                if (m_keyPendingOn[ch]) {
+                    writeYm2608RegLocked(0, 0x28, m_keyPendingData[ch]);
+                    m_keyPendingOn[ch] = false;
+                    m_keySawOff[ch] = false;
+                }
+            }
+        }
     }
 
     void loadAdpcmBRam(const std::vector<uint8_t>& data)
