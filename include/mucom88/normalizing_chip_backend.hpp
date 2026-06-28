@@ -7,7 +7,6 @@
 
 #include "chip_backend_interface.hpp"
 #include "chip_calibration.hpp"
-#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -36,19 +35,7 @@ public:
     bool hasChip() const noexcept override { return m_inner->hasChip(); }
 
     void writeReg(int port, uint8_t addr, uint8_t data) noexcept override {
-        // OPNA 固定: ADPCM-A total level=port0/0x11, ADPCM-B level=port1/0x0B。
-        // OPNB は ADPCM-A が port1 へ移るため、段2+ で OPNB calibration を足す際に分岐する。
-        static constexpr uint8_t kRegPcmaVol = 0x11;
-        static constexpr uint8_t kRegPcmbVol = 0x0B;
-
-        if (m_cal.adpcmATlOffset != 0 && port == 0 && addr == kRegPcmaVol) {
-            const int v = static_cast<int>(data) - m_cal.adpcmATlOffset;
-            data = static_cast<uint8_t>(v < 0 ? 0 : (v > 63 ? 63 : v));
-        } else if (m_cal.adpcmBGain != 1.0f && port == 1 && addr == kRegPcmbVol) {
-            const long v = std::lround(static_cast<float>(data) * m_cal.adpcmBGain);
-            data = static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
-        }
-        m_inner->writeReg(port, addr, data);
+        m_inner->writeReg(port, addr, calibrateOpnaAdpcmRegister(port, addr, data, m_cal));
     }
 
     void mixChunk(int32_t* interleavedLR, uint32_t frameCount) noexcept override {

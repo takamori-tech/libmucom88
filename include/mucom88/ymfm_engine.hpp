@@ -102,7 +102,7 @@ public:
             return;
         if (port == 0 && addr == 0x28 && deferKeyOnRetriggerLocked(data))
             return;
-        writeYm2608RegLocked(port, addr, data);
+        writeYm2608RegLocked(port, addr, calibrateAdpcmRegisterForCompatibilityLocked(port, addr, data));
     }
 
     void generateInterleaved(int16_t* buf, uint32_t frameCount) noexcept override
@@ -243,7 +243,8 @@ public:
         writeYm2608RegLocked(1, 0x05, static_cast<uint8_t>((endAddr >> 8) & 0xFF));
         writeYm2608RegLocked(1, 0x09, 0xBA);  // delta-N low: 0x49BA ~= 16kHz
         writeYm2608RegLocked(1, 0x0A, 0x49);  // delta-N high
-        writeYm2608RegLocked(1, 0x0B, static_cast<uint8_t>(std::clamp(level, 0, 255)));
+        writeYm2608RegLocked(1, 0x0B, calibrateAdpcmRegisterForCompatibilityLocked(
+            1, 0x0B, static_cast<uint8_t>(std::clamp(level, 0, 255))));
         writeYm2608RegLocked(1, 0x00, 0xA0);  // Start
         writeYm2608RegLocked(1, 0x01, 0xC0);  // Pan L+R
     }
@@ -331,6 +332,13 @@ private:
         const uint32_t base = (port == 0) ? 0u : 2u;
         m_chip.write(base, addr);
         m_chip.write(base + 1, data);
+    }
+
+    uint8_t calibrateAdpcmRegisterForCompatibilityLocked(int port, uint8_t addr, uint8_t data) const noexcept
+    {
+        return m_compatibilityOutput
+            ? calibrateOpnaAdpcmRegister(port, addr, data, calibrationFor(CHIP_ENGINE))
+            : data;
     }
 
     static int keyOnChannel(uint8_t data) noexcept

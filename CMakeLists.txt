@@ -28,6 +28,10 @@ if(LIBMUCOM88_BUILD_TESTS)
     target_link_libraries(adpcm_a_roundtrip PRIVATE mucom88::mucom88)
     add_test(NAME adpcm_a_roundtrip COMMAND adpcm_a_roundtrip)
 
+    add_executable(chip_calibration tests/chip_calibration.cpp)
+    target_link_libraries(chip_calibration PRIVATE mucom88::mucom88)
+    add_test(NAME chip_calibration COMMAND chip_calibration)
+
     add_executable(mml_render_mixed_limit tests/mml_render_mixed_limit.cpp)
     target_link_libraries(mml_render_mixed_limit PRIVATE mucom88::mucom88)
     add_test(NAME mml_render_mixed_limit COMMAND mml_render_mixed_limit)
