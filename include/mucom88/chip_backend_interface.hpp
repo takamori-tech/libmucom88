@@ -37,7 +37,8 @@ enum class ChipMode {
 //
 // OPN の 3'993'600Hz は PC-88 OSC3/8 の真値。VGM 由来再生で 4'000'000Hz が
 // 与えられる場合は setChipClock() で注入する（ヘッダ丸め、約 +2.77cent）。
-// OPM/OPNB の値は #299 まで消費者なしの暫定値で inert。
+// OPM の値は #299 まで消費者なしの暫定値で inert。
+// OPNB は Neo Geo の LSPC2-A2 8M 出力(24MHz/3)が入る YM2610 PHI M=8MHz を既定とする。
 // =============================================================================
 struct ChipProfile {
     uint32_t defaultClock;
@@ -52,7 +53,7 @@ struct ChipProfile {
     switch (mode) {
     case ChipMode::OPNA: return { 7987200u, 6, 3, true,  true  };
     case ChipMode::OPM:  return { 7987200u, 8, 0, false, false };
-    case ChipMode::OPNB: return { 7987200u, 6, 3, true,  true  };
+    case ChipMode::OPNB: return { 8000000u, 4, 3, true,  true  };
     case ChipMode::OPN:  return { 3993600u, 3, 3, false, false };
     }
     return chipModeProfile(ChipMode::OPNA);
@@ -63,6 +64,9 @@ static_assert(chipModeProfile(ChipMode::OPNA).defaultClock == 7987200u,
 static_assert(chipModeProfile(ChipMode::OPN).defaultClock == 3993600u &&
               chipModeProfile(ChipMode::OPN).numFmChannels == 3,
               "OPN profile must match YM2203 hardware limits");
+static_assert(chipModeProfile(ChipMode::OPNB).defaultClock == 8000000u &&
+              chipModeProfile(ChipMode::OPNB).numFmChannels == 4,
+              "OPNB profile must match YM2610 hardware limits");
 
 // FM エンジン種別。mucom88v FmEngineType と値順一致。段2 で FmEngineType を
 // 本 enum の alias へ縮退させ、independent enum を残さない。
