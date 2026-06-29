@@ -505,8 +505,8 @@ public:
                 setGlobalAttenuation(0);
             } else {
                 m_duckReleaseSamplesLeft -= frameCount;
-                float t = static_cast<float>(m_duckReleaseSamplesLeft) / m_duckReleaseSamples;
-                int att = static_cast<int>(m_duckAttTarget * t);
+                float t = static_cast<float>(m_duckReleaseSamplesLeft) / static_cast<float>(m_duckReleaseSamples);
+                int att = static_cast<int>(static_cast<float>(m_duckAttTarget) * t);
                 setGlobalAttenuation(att);
             }
         }
@@ -686,7 +686,7 @@ public:
     // ボイスの音量はplayVoice()でmasterAttのみ適用される。
     void setDucking(int attTarget, float releaseSec = 0.15f) {
         m_duckAttTarget = attTarget;
-        m_duckReleaseSamples = static_cast<uint32_t>(releaseSec * m_sampleRate);
+        m_duckReleaseSamples = static_cast<uint32_t>(releaseSec * static_cast<float>(m_sampleRate));
         m_duckEnabled = (attTarget > 0);
     }
 
@@ -777,7 +777,7 @@ public:
         }
         m_fadeStartAtt  = m_fadeAtt;
         m_fadeTargetAtt = 127;
-        m_fadeTotalSamples = static_cast<uint32_t>(seconds * m_sampleRate);
+        m_fadeTotalSamples = static_cast<uint32_t>(seconds * static_cast<float>(m_sampleRate));
         m_fadeSamplesLeft  = m_fadeTotalSamples;
         m_fading = true;
     }
@@ -795,7 +795,7 @@ public:
         }
         m_fadeStartAtt  = m_fadeAtt;
         m_fadeTargetAtt = 0;
-        m_fadeTotalSamples = static_cast<uint32_t>(seconds * m_sampleRate);
+        m_fadeTotalSamples = static_cast<uint32_t>(seconds * static_cast<float>(m_sampleRate));
         m_fadeSamplesLeft  = m_fadeTotalSamples;
         m_fading = true;
     }
@@ -1839,10 +1839,19 @@ private:
                 st.loop.eventIdx = st.eventIdx + 1;
                 st.loop.tick = ev.tick;
                 break;
+            case MmlEventType::REG_WRITE:
+            case MmlEventType::RHYTHM_LEVEL:
+            case MmlEventType::KEY_TRANSPOSE:
+            case MmlEventType::REVERB_MODE:
+            case MmlEventType::PORTAMENTO:
+            case MmlEventType::HARDWARE_LFO:
+            case MmlEventType::LFO_PARAM:
+            case MmlEventType::CSM_MODE:
+            case MmlEventType::TIE_KEYOFF:
+                break;
             case MmlEventType::END:
                 st.eventIdx = st.events.size();
                 return;
-            default: break;
             }
             st.eventIdx++;
         }
@@ -1977,8 +1986,8 @@ private:
                 m_fading = false;
             } else {
                 m_fadeSamplesLeft -= frameCount;
-                float t = 1.0f - static_cast<float>(m_fadeSamplesLeft) / m_fadeTotalSamples;
-                m_fadeAtt = m_fadeStartAtt + static_cast<int>((m_fadeTargetAtt - m_fadeStartAtt) * t);
+                float t = 1.0f - static_cast<float>(m_fadeSamplesLeft) / static_cast<float>(m_fadeTotalSamples);
+                m_fadeAtt = m_fadeStartAtt + static_cast<int>(static_cast<float>(m_fadeTargetAtt - m_fadeStartAtt) * t);
             }
             recalcGlobalAtt();
         }
@@ -2267,7 +2276,15 @@ private:
                 st.ssgEnv.sr = ev.envSR; st.ssgEnv.rr = ev.envRR;
                 if (isSSG(ch)) st.reverb.value = ev.envRR;  // Z80 IX+17 共有 (RR↔R)
                 break;
-            default: break;
+            case MmlEventType::NOTE_ON:
+            case MmlEventType::NOTE_OFF:
+            case MmlEventType::REST:
+            case MmlEventType::RHYTHM_LEVEL:
+            case MmlEventType::KEY_TRANSPOSE:
+            case MmlEventType::LOOP_POINT:
+            case MmlEventType::TIE_KEYOFF:
+            case MmlEventType::END:
+                break;
             }
         }
     }
