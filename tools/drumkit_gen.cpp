@@ -21,6 +21,7 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <limits>
 
 #include <mucom88/adpcm_a_encode.hpp>
 
@@ -37,50 +38,135 @@ struct WavFile {
     std::string error;
 };
 
+static bool readExact(std::ifstream& ifs, char* dst, std::streamsize size, std::string& error, const char* what)
+{
+    if (!ifs.read(dst, size)) {
+        error = std::string("truncated ") + what;
+        return false;
+    }
+    return true;
+}
+
+static bool ensureBytesAvailable(std::ifstream& ifs, uint32_t size, std::string& error, const char* what)
+{
+    const auto current = ifs.tellg();
+    if (current < std::streampos(0)) {
+        error = std::string("cannot determine ") + what + " position";
+        return false;
+    }
+
+    ifs.seekg(0, std::ios::end);
+    const auto end = ifs.tellg();
+    ifs.seekg(current);
+    if (!ifs || end < current) {
+        error = std::string("cannot determine ") + what + " length";
+        return false;
+    }
+
+    const auto remaining = end - current;
+    if (remaining < std::streamoff(size)) {
+        error = std::string("truncated ") + what;
+        return false;
+    }
+    return true;
+}
+
+static bool skipExact(std::ifstream& ifs, uint32_t size, std::string& error, const char* what)
+{
+    if (size == 0) {
+        return true;
+    }
+    if (!ensureBytesAvailable(ifs, size, error, what)) {
+        return false;
+    }
+    ifs.seekg(static_cast<std::streamoff>(size), std::ios::cur);
+    if (!ifs) {
+        error = std::string("truncated ") + what;
+        return false;
+    }
+    return true;
+}
+
+static bool skipChunkPadding(std::ifstream& ifs, uint32_t chunkSize, std::string& error)
+{
+    if ((chunkSize & 1U) == 0U) {
+        return true;
+    }
+    char pad = 0;
+    return readExact(ifs, &pad, 1, error, "chunk padding");
+}
+
+static bool isSupportedWavEncoding(uint16_t audioFormat, uint16_t bitsPerSample)
+{
+    if (audioFormat == 1) {
+        return bitsPerSample == 8 || bitsPerSample == 16 || bitsPerSample == 24 || bitsPerSample == 32;
+    }
+    if (audioFormat == 3) {
+        return bitsPerSample == 32 || bitsPerSample == 64;
+    }
+    return false;
+}
+
 static WavFile loadWav(const char* path)
 {
     WavFile wav;
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) { wav.error = "cannot open file"; return wav; }
 
-    char riff[4]; ifs.read(riff, 4);
+    char riff[4];
+    if (!readExact(ifs, riff, 4, wav.error, "RIFF header")) return wav;
     if (std::memcmp(riff, "RIFF", 4) != 0) { wav.error = "not a RIFF file"; return wav; }
-    uint32_t fileSize; ifs.read(reinterpret_cast<char*>(&fileSize), 4);
+    uint32_t fileSize = 0;
+    if (!readExact(ifs, reinterpret_cast<char*>(&fileSize), 4, wav.error, "RIFF size")) return wav;
     (void)fileSize;
-    char wave[4]; ifs.read(wave, 4);
+    char wave[4];
+    if (!readExact(ifs, wave, 4, wav.error, "WAVE header")) return wav;
     if (std::memcmp(wave, "WAVE", 4) != 0) { wav.error = "not a WAVE file"; return wav; }
 
     bool fmtFound = false, dataFound = false;
     uint32_t dataSize = 0;
     std::vector<uint8_t> rawData;
 
-    while (ifs && !ifs.eof()) {
-        char chunkId[4]; ifs.read(chunkId, 4);
-        if (ifs.gcount() < 4) break;
-        uint32_t chunkSize; ifs.read(reinterpret_cast<char*>(&chunkSize), 4);
-        if (ifs.gcount() < 4) break;
+    while (true) {
+        char chunkId[4];
+        if (!ifs.read(chunkId, 4)) {
+            if (ifs.eof() && ifs.gcount() == 0) break;
+            wav.error = "truncated chunk header";
+            return wav;
+        }
+        uint32_t chunkSize = 0;
+        if (!readExact(ifs, reinterpret_cast<char*>(&chunkSize), 4, wav.error, "chunk size")) return wav;
 
         if (std::memcmp(chunkId, "fmt ", 4) == 0) {
             if (chunkSize < 16) { wav.error = "fmt chunk too small"; return wav; }
-            ifs.read(reinterpret_cast<char*>(&wav.audioFormat), 2);
-            ifs.read(reinterpret_cast<char*>(&wav.numChannels), 2);
-            ifs.read(reinterpret_cast<char*>(&wav.sampleRate), 4);
-            uint32_t byteRate; ifs.read(reinterpret_cast<char*>(&byteRate), 4);
-            uint16_t blockAlign; ifs.read(reinterpret_cast<char*>(&blockAlign), 2);
+            if (!readExact(ifs, reinterpret_cast<char*>(&wav.audioFormat), 2, wav.error, "fmt audio format")) return wav;
+            if (!readExact(ifs, reinterpret_cast<char*>(&wav.numChannels), 2, wav.error, "fmt channel count")) return wav;
+            if (!readExact(ifs, reinterpret_cast<char*>(&wav.sampleRate), 4, wav.error, "fmt sample rate")) return wav;
+            uint32_t byteRate = 0;
+            if (!readExact(ifs, reinterpret_cast<char*>(&byteRate), 4, wav.error, "fmt byte rate")) return wav;
+            uint16_t blockAlign = 0;
+            if (!readExact(ifs, reinterpret_cast<char*>(&blockAlign), 2, wav.error, "fmt block align")) return wav;
             (void)byteRate;
             (void)blockAlign;
-            ifs.read(reinterpret_cast<char*>(&wav.bitsPerSample), 2);
-            if (chunkSize > 16) ifs.seekg(chunkSize - 16, std::ios::cur);
+            if (!readExact(ifs, reinterpret_cast<char*>(&wav.bitsPerSample), 2, wav.error, "fmt bits per sample")) return wav;
+            if (chunkSize > 16 && !skipExact(ifs, chunkSize - 16, wav.error, "fmt extension")) return wav;
+            if (!skipChunkPadding(ifs, chunkSize, wav.error)) return wav;
             fmtFound = true;
         }
         else if (std::memcmp(chunkId, "data", 4) == 0) {
             dataSize = chunkSize;
+            if (!ensureBytesAvailable(ifs, dataSize, wav.error, "data chunk")) return wav;
             rawData.resize(dataSize);
-            ifs.read(reinterpret_cast<char*>(rawData.data()), dataSize);
+            if (dataSize > 0 && !readExact(ifs, reinterpret_cast<char*>(rawData.data()),
+                                           static_cast<std::streamsize>(dataSize), wav.error, "data chunk")) {
+                return wav;
+            }
+            if (!skipChunkPadding(ifs, chunkSize, wav.error)) return wav;
             dataFound = true;
         }
         else {
-            ifs.seekg(chunkSize, std::ios::cur);
+            if (!skipExact(ifs, chunkSize, wav.error, "chunk body")) return wav;
+            if (!skipChunkPadding(ifs, chunkSize, wav.error)) return wav;
         }
     }
 
@@ -90,35 +176,54 @@ static WavFile loadWav(const char* path)
     if (wav.audioFormat != 1 && wav.audioFormat != 3) {
         wav.error = "unsupported format"; return wav;
     }
+    if (wav.sampleRate == 0) { wav.error = "0 sample rate"; return wav; }
+    if (!isSupportedWavEncoding(wav.audioFormat, wav.bitsPerSample)) {
+        wav.error = "unsupported bit depth"; return wav;
+    }
 
-    int bytesPerSample = wav.bitsPerSample / 8;
-    int frameSize = bytesPerSample * wav.numChannels;
-    int numFrames = (int)dataSize / frameSize;
+    const size_t bytesPerSample = static_cast<size_t>(wav.bitsPerSample / 8);
+    const size_t frameSize = bytesPerSample * static_cast<size_t>(wav.numChannels);
+    if (bytesPerSample == 0 || frameSize == 0) {
+        wav.error = "invalid frame size"; return wav;
+    }
+    if (dataSize % frameSize != 0) {
+        wav.error = "data chunk not frame aligned"; return wav;
+    }
+    const size_t numFrames = static_cast<size_t>(dataSize) / frameSize;
+    if (numFrames > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        wav.error = "too many frames"; return wav;
+    }
     wav.samples.resize(numFrames);
 
-    for (int i = 0; i < numFrames; i++) {
+    for (size_t i = 0; i < numFrames; i++) {
         float monoSum = 0.0f;
-        for (int ch = 0; ch < wav.numChannels; ch++) {
-            int offset = i * frameSize + ch * bytesPerSample;
+        for (uint16_t ch = 0; ch < wav.numChannels; ch++) {
+            const size_t offset = i * frameSize + static_cast<size_t>(ch) * bytesPerSample;
+            if (offset + bytesPerSample > rawData.size()) {
+                wav.error = "sample data out of range";
+                return wav;
+            }
             float sample = 0.0f;
             if (wav.audioFormat == 1) {
                 switch (wav.bitsPerSample) {
-                case 8: sample = ((float)rawData[offset] - 128.0f) / 128.0f; break;
-                case 16: { int16_t v; std::memcpy(&v, &rawData[offset], 2); sample = (float)v / 32768.0f; break; }
+                case 8: sample = (static_cast<float>(rawData[offset]) - 128.0f) / 128.0f; break;
+                case 16: { int16_t v; std::memcpy(&v, &rawData[offset], 2); sample = static_cast<float>(v) / 32768.0f; break; }
                 case 24: {
-                    int32_t v = (int32_t)rawData[offset] | ((int32_t)rawData[offset+1] << 8) | ((int32_t)rawData[offset+2] << 16);
+                    int32_t v = static_cast<int32_t>(rawData[offset])
+                        | (static_cast<int32_t>(rawData[offset + 1]) << 8)
+                        | (static_cast<int32_t>(rawData[offset + 2]) << 16);
                     if (v & 0x800000) v |= ~0xFFFFFF;
-                    sample = (float)v / 8388608.0f; break;
+                    sample = static_cast<float>(v) / 8388608.0f; break;
                 }
-                case 32: { int32_t v; std::memcpy(&v, &rawData[offset], 4); sample = (float)v / 2147483648.0f; break; }
+                case 32: { int32_t v; std::memcpy(&v, &rawData[offset], 4); sample = static_cast<float>(v) / 2147483648.0f; break; }
                 }
             } else {
                 if (wav.bitsPerSample == 32) { float v; std::memcpy(&v, &rawData[offset], 4); sample = v; }
-                else { double v; std::memcpy(&v, &rawData[offset], 8); sample = (float)v; }
+                else { double v; std::memcpy(&v, &rawData[offset], 8); sample = static_cast<float>(v); }
             }
             monoSum += sample;
         }
-        wav.samples[i] = monoSum / (float)wav.numChannels;
+        wav.samples[i] = monoSum / static_cast<float>(wav.numChannels);
     }
     return wav;
 }
@@ -256,11 +361,16 @@ int main(int argc, char* argv[])
         if (!wav.error.empty()) {
             std::fprintf(stderr, "  %-12s : ERROR: %s (%s)\n",
                          slot.name, wav.error.c_str(), wavPaths[s]);
-            continue;
+            return 1;
         }
 
         // リサンプリング
         auto resampled = resample(wav.samples, wav.sampleRate, ADPCM_A_RATE);
+        if (resampled.empty()) {
+            std::fprintf(stderr, "  %-12s : ERROR: no samples after resampling (%s)\n",
+                         slot.name, wavPaths[s]);
+            return 1;
+        }
 
         // 最大サンプル数に切り詰め（1バイト=2サンプル）
         uint32_t maxSamples = slot.maxBytes * 2;
@@ -289,6 +399,11 @@ int main(int argc, char* argv[])
 
         // ADPCM エンコード
         auto adpcm = encodeAdpcmANibbles(pcm16);
+        if (adpcm.empty()) {
+            std::fprintf(stderr, "  %-12s : ERROR: no ADPCM output (%s)\n",
+                         slot.name, wavPaths[s]);
+            return 1;
+        }
 
         // ROM にコピー
         size_t copySize = std::min(adpcm.size(), (size_t)slot.maxBytes);
