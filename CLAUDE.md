@@ -36,6 +36,17 @@ IFmEngine ── 抽象インターフェース（利用側で実装、または
 - **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
 - **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
 
+## 直近ハンドオーバー（2026-06-29 / #99 OPNB Neo Geo clock profile）
+
+- **コミット**: `decb182b1978ebc234b1c7e4108d828aee8d9f1b Fix OPNB chip profile clock`（`origin/main` にpush済み）。
+- **Issue**: `takamori-tech/libmucom88#99` は close 済み。
+- **目的**: YM2610(OPNB) を Neo Geo 再現用 profile として扱い、consumer が `ChipMode::OPNB` を選んだ時に未確定/不正な clock・FM ch 数へ落ちないようにする。
+- **仕様根拠**: Neo Geo は 24MHz 系 master から LSPC2-A2 の 8M 出力（24MHz/3）を YM2610 `PHI M` に入れる。OPNB/YM2610 の FM は 4ch。
+- **実装**: `include/mucom88/chip_backend_interface.hpp` の `chipModeProfile(ChipMode::OPNB)` を `{ 8000000u, 4, 3, true, true }` に変更。OPNB defaultClock と numFmChannels の static_assert を追加。
+- **検証済み**: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`、`cmake --build build`、`ctest --test-dir build --output-on-failure` が PASS（3/3）。
+- **consumer 指示（MUCOM88V）**: MUCOM88V は `vendor/libmucom88` をこの commit へ submodule 追従するだけにする。MUCOM88V 側で `include/mucom88/chip_backend_interface.hpp` を直接編集しない。
+- **consumer 側追加注意**: MUCOM88V では fmgen OPNB crash が別途 consumer 側 `patches/fmgen/0001-opn-stem-output-api.patch` で修正されている。これは libmucom88 の責務ではなく、fmgen vendor patch 正本で管理する。
+
 ## 直近ハンドオーバー（2026-06-29 / #97 FmEngineYmfm ADPCM L1 calibration）
 
 - **コミット**: `9aa1f42428f940d7c1295da6b6d6779764367342 Apply ymfm ADPCM calibration in compatibility mode`（`origin/main` にpush済み）。
