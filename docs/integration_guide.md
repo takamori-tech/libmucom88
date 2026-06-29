@@ -30,6 +30,7 @@ target_include_directories(your_target PRIVATE vendor/libmucom88/include)
 | `mucom88/fm_common.hpp` | FM音色定義（FmPatch）、周波数変換、voice.datパーサー |
 | `mucom88/fm_engine_interface.hpp` | IFmEngine 抽象インターフェース |
 | `mucom88/ymfm_engine.hpp` | optional ymfm OPNA `IFmEngine` 互換アダプタ |
+| `mucom88/logical_stem_mixer.hpp` | opt-in 64-bit logical stem summing helper |
 | `mucom88/mml_parser.hpp` | MMLパーサー（MucFile構造体を出力） |
 | `mucom88/mml_engine.hpp` | MMLシーケンサー（Timer-B駆動、11チャンネル制御） |
 

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="620" viewBox="0 0 1080 620" role="img" aria-labelledby="title desc">
+  <title id="title">libmucom88 logical stem mixing</title>
+  <desc id="desc">Opt-in logical stem mixer flow showing backend stem frames, Native or Tuned output behavior, double accumulation, and final float frames.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f8f5; }
+      .panel { fill: #fff; stroke: #263238; stroke-width: 2; }
+      .stage { fill: #eaf3f0; stroke: #2c6b5c; stroke-width: 1.5; }
+      .stage2 { fill: #fff4de; stroke: #8a6424; stroke-width: 1.5; }
+      .stage3 { fill: #eef1fb; stroke: #4b5f9f; stroke-width: 1.5; }
+      .warn { fill: #fdeceb; stroke: #a9433b; stroke-width: 1.5; }
+      .text { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #1f2a2e; font-size: 18px; }
+      .title { font-size: 26px; font-weight: 800; }
+      .label { font-size: 16px; font-weight: 700; }
+      .small { font-size: 14px; }
+      .tiny { font-size: 12px; }
+      .arrow { stroke: #263238; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 5; }
+      .green { fill: #2c6b5c; }
+      .amber { fill: #8a6424; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263238"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1080" height="620"/>
+  <text x="40" y="50" class="text title">Opt-in 64-bit logical stem mixing</text>
+  <text x="40" y="78" class="text small">既定では未使用。consumer が logical_stem_mixer.hpp を明示呼び出しした場合だけ通る。</text>
+
+  <rect x="45" y="120" width="990" height="285" rx="8" class="panel"/>
+  <rect x="80" y="175" width="170" height="70" rx="6" class="stage3"/>
+  <text x="98" y="202" class="text label">IChipBackend</text>
+  <text x="98" y="226" class="text small">mixStemChunk()</text>
+
+  <path d="M250 210 H320" class="arrow"/>
+  <rect x="320" y="175" width="180" height="70" rx="6" class="stage2"/>
+  <text x="338" y="202" class="text label">ChipStemFrame</text>
+  <text x="338" y="226" class="text small">backend-output stems</text>
+
+  <path d="M500 210 H570" class="arrow"/>
+  <rect x="570" y="160" width="230" height="100" rx="6" class="stage"/>
+  <text x="590" y="190" class="text label">LogicalStemAccumulator</text>
+  <text x="590" y="216" class="text small">FM1-6 / SSG1-3</text>
+  <text x="590" y="238" class="text small">Rhythm / ADPCM-B</text>
+
+  <path d="M800 210 H875" class="arrow"/>
+  <rect x="875" y="175" width="130" height="70" rx="6" class="stage"/>
+  <text x="892" y="202" class="text label">float frame</text>
+  <text x="892" y="226" class="text small">main + stems</text>
+
+  <path d="M165 245 C165 320 605 350 685 260" class="arrow dash"/>
+  <rect x="100" y="300" width="245" height="64" rx="6" class="warn"/>
+  <text x="118" y="326" class="text label">fallback stereo</text>
+  <text x="118" y="348" class="text small">stem未対応backend用の別枠</text>
+
+  <text x="80" y="145" class="text label">consumer-controlled render path</text>
+  <text x="565" y="320" class="text small">Native/Tuned, DAC, limiter, trim の適用点は backend 側契約を維持する。</text>
+  <text x="565" y="347" class="text small">この helper は加算と float 変換だけを共有し、UIやDAW busは持たない。</text>
+
+  <rect x="45" y="440" width="990" height="125" rx="8" class="panel"/>
+  <text x="70" y="475" class="text label">Headroom guide</text>
+  <text x="70" y="505" class="text small">同相加算の peak increase = 20 log10(N): 2 voices +6.0 dB, 4 voices +12.0 dB, 8 voices +18.1 dB.</text>
+  <text x="70" y="532" class="text small">11 OPNA logical stems = +20.8 dB. 8 polyphonic instances x 11 stems = +38.9 dB worst case.</text>
+  <rect x="720" y="480" width="120" height="14" class="green"/>
+  <rect x="840" y="480" width="120" height="14" class="amber"/>
+  <text x="718" y="514" class="text tiny">0 dBFS nominal</text>
+  <text x="836" y="514" class="text tiny">float can carry overs</text>
+</svg>

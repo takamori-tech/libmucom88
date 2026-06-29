@@ -185,6 +185,23 @@ engine.init(&fmEngine, 44100, FmEngineYmfm::CHIP_CLOCK);
 
 ---
 
+## LogicalStemMixer（logical_stem_mixer.hpp）
+
+`IChipBackend::mixStemChunk()` が返す `ChipStemFrame` を、FM/SSG/Rhythm/ADPCM-B の
+論理 stem 単位で 64-bit double accumulation する opt-in helper。
+既定では未使用で、consumer が明示的に include/call した場合だけ有効になる。
+
+| 型 / 関数 | 説明 |
+|----------|------|
+| `LogicalStemMixOptions` | `enableDoubleStemSumming`、`outputScale`、`masterGain` を持つ。既定では `enableDoubleStemSumming=false` |
+| `LogicalStemAccumulator` | `addStem()` / `addFallbackStereo()` で double accumulator に加算し、`left()` / `right()` で main sum を返す |
+| `LogicalStemFloatFrame` | main、FM1-6、SSG1-3、Rhythm、ADPCM-B、fallback の final float frame |
+| `writeLogicalStemFloatFrame(acc, options, out)` | `options.enableDoubleStemSumming` が true の時だけ `out` を書き、true を返す。false なら何もせず false |
+
+詳細: [Logical Stem Mixing](logical_stem_mixing.md)
+
+---
+
 ## ChipOutputTuning（chip_output_tuning.hpp）
 
 engine別の出力プリセット定義。`MmlEngine` は既定で `ChipOutputProfile::Tuned` を適用する。
