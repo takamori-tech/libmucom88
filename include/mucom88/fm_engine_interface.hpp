@@ -86,22 +86,22 @@ public:
         writeReg(0, 0x28, static_cast<uint8_t>(0x00 | chKey));
         // SL/RR = 0x0F（最速リリース）
         for (int oi = 0; oi < 4; oi++)
-            writeReg(port, 0x80 + kFmSlotOffset[oi] + off, 0x0F);
+            writeReg(port, static_cast<uint8_t>(0x80 + kFmSlotOffset[oi] + off), 0x0F);
         // 全オペレータパラメータ
         for (int oi = 0; oi < 4; oi++) {
             int base = kFmSlotOffset[oi] + off;
             const auto& op = patch.op[oi];
-            writeReg(port, 0x30 + base, static_cast<uint8_t>(((op.dt & 0x07) << 4) | (op.ml & 0x0F)));
-            writeReg(port, 0x40 + base, static_cast<uint8_t>(op.tl & 0x7F));
-            writeReg(port, 0x50 + base, static_cast<uint8_t>(((op.ks & 0x03) << 6) | (op.ar & 0x1F)));
-            writeReg(port, 0x60 + base, static_cast<uint8_t>(((op.ame & 1) << 7) | (op.dr & 0x1F)));
-            writeReg(port, 0x70 + base, static_cast<uint8_t>(op.sr & 0x1F));
-            writeReg(port, 0x80 + base, static_cast<uint8_t>(((op.sl & 0x0F) << 4) | (op.rr & 0x0F)));
+            writeReg(port, static_cast<uint8_t>(0x30 + base), static_cast<uint8_t>(((op.dt & 0x07) << 4) | (op.ml & 0x0F)));
+            writeReg(port, static_cast<uint8_t>(0x40 + base), static_cast<uint8_t>(op.tl & 0x7F));
+            writeReg(port, static_cast<uint8_t>(0x50 + base), static_cast<uint8_t>(((op.ks & 0x03) << 6) | (op.ar & 0x1F)));
+            writeReg(port, static_cast<uint8_t>(0x60 + base), static_cast<uint8_t>(((op.ame & 1) << 7) | (op.dr & 0x1F)));
+            writeReg(port, static_cast<uint8_t>(0x70 + base), static_cast<uint8_t>(op.sr & 0x1F));
+            writeReg(port, static_cast<uint8_t>(0x80 + base), static_cast<uint8_t>(((op.sl & 0x0F) << 4) | (op.rr & 0x0F)));
         }
         // FB/ALG
-        writeReg(port, 0xB0 + off, static_cast<uint8_t>(((patch.fb & 0x07) << 3) | (patch.al & 0x07)));
+        writeReg(port, static_cast<uint8_t>(0xB0 + off), static_cast<uint8_t>(((patch.fb & 0x07) << 3) | (patch.al & 0x07)));
         // PAN: L+R
-        writeReg(port, 0xB4 + off, 0xC0);
+        writeReg(port, static_cast<uint8_t>(0xB4 + off), 0xC0);
     }
 
     // ── FM周波数設定（F-Number + Block）──────────────────
@@ -114,8 +114,8 @@ public:
         int off  = fmIndex % 3;
         int block = 4;
         uint16_t fnum = noteToFnum(noteNum, block);
-        writeReg(port, 0xA4 + off, static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
-        writeReg(port, 0xA0 + off, static_cast<uint8_t>(fnum & 0xFF));
+        writeReg(port, static_cast<uint8_t>(0xA4 + off), static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
+        writeReg(port, static_cast<uint8_t>(0xA0 + off), static_cast<uint8_t>(fnum & 0xFF));
     }
 
     // ── FM KEY ON/OFF ────────────────────────────────────

@@ -221,7 +221,8 @@ inline void writeVoiceDatEntry(uint8_t* rec, const FmPatch& p)
 
     // 音色名 (byte 26-31, 6バイト固定)
     for (int j = 0; j < 6; j++) {
-        char c = (j < static_cast<int>(p.name.size())) ? p.name[j] : ' ';
+        const auto nameIdx = static_cast<size_t>(j);
+        char c = (nameIdx < p.name.size()) ? p.name[nameIdx] : ' ';
         rec[26 + j] = static_cast<uint8_t>(c);
     }
 }
