@@ -162,7 +162,7 @@ public:
     // H=FM4(7), I=FM5(8), J=FM6(9)     ← FM4〜6はH〜J
     // K=ADPCM(10)
     static int trackCharToChannel(char c) {
-        c = std::toupper(static_cast<unsigned char>(c));
+        c = toUpper(c);
         if (c >= 'A' && c <= 'C') return c - 'A';        // FM1〜3: 0〜2
         if (c >= 'D' && c <= 'F') return 3 + (c - 'D');  // SSG1〜3: 3〜5
         if (c == 'G') return 6;                           // Rhythm: 6
@@ -299,14 +299,14 @@ public:
             mmlStr = expandMacros(mmlStr);
 
             // このチャンネルのMMLをパース
-            parseChannelMml(mmlStr, ch, result.channelEvents[ch]);
+            parseChannelMml(mmlStr, ch, result.channelEvents[chIndex(ch)]);
         }
 
         // ── 後処理: 中間ENDを除去し、末尾に1つだけENDを残す ──
         // 複数行の同一トラックをパースすると行ごとにENDが挿入される
         // → 中間ENDはNOTE_ONより手前にあり再生を途中で止めてしまう
         for (int ch = 0; ch < 11; ch++) {
-            auto& evs = result.channelEvents[ch];
+            auto& evs = result.channelEvents[chIndex(ch)];
             if (evs.empty()) continue;
 
             // ENDイベントを全て除去してから末尾に1つ追加
@@ -332,8 +332,8 @@ public:
 
         // Cコマンドの値を結果に記録（最初のチャンネルのwholeTickを採用）
         for (int ch = 0; ch < 11; ch++) {
-            if (m_chState[ch].wholeTick != WHOLE_TICK) {
-                result.wholeTick = m_chState[ch].wholeTick;
+            if (m_chState[chIndex(ch)].wholeTick != WHOLE_TICK) {
+                result.wholeTick = m_chState[chIndex(ch)].wholeTick;
                 break;
             }
         }
@@ -396,6 +396,26 @@ private:
     int m_echoVolRed = 0;   // VDDAT: 音量減衰値（初期値=0）
 
     std::vector<uint8_t> m_voiceDat;  // voice.dat バイナリデータ
+
+    [[nodiscard]] static char toUpper(char c)
+    {
+        return static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+
+    [[nodiscard]] static char toLower(char c)
+    {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    [[nodiscard]] static size_t chIndex(int ch)
+    {
+        return static_cast<size_t>(ch);
+    }
+
+    [[nodiscard]] static uint32_t tickFromInt(int value)
+    {
+        return static_cast<uint32_t>(value);
+    }
 
     // voice.dat の 1エントリ(32バイト)をパース（fm_common.hpp の共通関数を使用）
     Mucom88Patch parseVoiceDatEntry(int patchNo) const
@@ -680,7 +700,7 @@ private:
                          std::vector<MmlEvent>& events)
     {
         // クラスメンバーの State を使う（複数行またぎで octave 等が引き継がれる）
-        State& st = m_chState[ch];
+        State& st = m_chState[chIndex(ch)];
 
         // tick は既存イベントの末尾から継続
         if (!events.empty() && st.tick == 0) {
@@ -691,7 +711,7 @@ private:
 
         size_t pos = 0;
         while (pos < mml.size()) {
-            char c = std::tolower(static_cast<unsigned char>(mml[pos]));
+            char c = toLower(mml[pos]);
 
             // 空白・区切り文字スキップ（|=視認性用区切り、Wiki準拠）
             if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '_' || c == '|') {
@@ -821,7 +841,7 @@ private:
                 if (pos < mml.size() && mml[pos] == '%') {
                     // r%N: クロック直接指定
                     pos++;
-                    ticks = readInt(mml, pos, 0);
+                    ticks = tickFromInt(readInt(mml, pos, 0));
                 } else {
                     int len = 0;
                     bool explicitLen = false;
@@ -836,11 +856,11 @@ private:
                     // Z80 SETRS2: 数値なしの場合COUNT(=defLen)をそのまま使用
                     // defLenIsClock時はクロック直接値として扱う（wholeTick/lenしない）
                     if (!explicitLen && st.defLenIsClock) {
-                        ticks = len;
+                        ticks = tickFromInt(len);
                         int dot = static_cast<int>(ticks);
                         for (int d = 0; d < dotCount; d++) {
                             dot >>= 1;
-                            ticks += dot;
+                            ticks += tickFromInt(dot);
                         }
                     } else {
                         bool tieDummy = false;
@@ -1479,7 +1499,7 @@ private:
     {
         pos++;  // skip 'm'
         if (pos < mml.size()) {
-            char sub = std::tolower(static_cast<unsigned char>(mml[pos]));
+            char sub = toLower(mml[pos]);
             if (sub == 'f') {
                 // MF0 = LFO OFF, MF1 = LFO ON
                 pos++;
@@ -1542,7 +1562,7 @@ private:
         // 開始音をパースしてNOTE_ON/NOTE_OFFを生成
         size_t evCountBefore = events.size();
         if (pos < mml.size()) {
-            char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
+            char nc = toLower(mml[pos]);
             if (nc >= 'a' && nc <= 'g') {
                 parseNote(mml, pos, ch, st, events);
             }
@@ -1554,7 +1574,7 @@ private:
         int endNote = -1;
         if (pos < mml.size() && mml[pos] != '}') {
             static const int noteOffsets[] = { 9, 11, 0, 2, 4, 5, 7 }; // a-g
-            char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
+            char nc = toLower(mml[pos]);
             if (nc >= 'a' && nc <= 'g') {
                 int semi = noteOffsets[nc - 'a'];
                 pos++;
@@ -1711,7 +1731,8 @@ private:
                 for (size_t ei = 0; ei < limit; ei++) {
                     MmlEvent ev = events[lf.eventStart + ei];
                     // tick をベースからのオフセットに再計算
-                    ev.tick = (events[lf.eventStart + ei].tick - lf.startTick) + (lf.startTick + rep * bodyTicks);
+                    ev.tick = (events[lf.eventStart + ei].tick - lf.startTick)
+                            + (lf.startTick + tickFromInt(rep) * bodyTicks);
                     // VOLUMEイベント: (/)による累積変化を反映
                     // note==2: 相対音量変更（(/)コマンド）— 補正対象
                     // note==3: エコー音量（\コマンド）— 補正対象
@@ -1727,9 +1748,9 @@ private:
                     events.push_back(ev);
                 }
                 if (isLast && hasBreak)
-                    st.tick = lf.startTick + rep * bodyTicks + tickLimit;
+                    st.tick = lf.startTick + tickFromInt(rep) * bodyTicks + tickLimit;
                 else
-                    st.tick = lf.startTick + (rep + 1) * bodyTicks;
+                    st.tick = lf.startTick + tickFromInt(rep + 1) * bodyTicks;
             }
             // パーサーのボリューム状態を最終反復の値に更新
             if (volDelta != 0) {
@@ -1841,7 +1862,7 @@ private:
             5,  // f
             7,  // g
         };
-        char c = std::tolower(static_cast<unsigned char>(mml[pos]));
+        char c = toLower(mml[pos]);
         int semi = noteOffsets[c - 'a'];
         pos++;
 
@@ -1857,12 +1878,12 @@ private:
         uint32_t directTicks = 0;  // %N指定時のクロック直接値
         if (pos < mml.size() && mml[pos] == '%') {
             pos++;
-            directTicks = readInt(mml, pos, 0);
+            directTicks = tickFromInt(readInt(mml, pos, 0));
         } else if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos]))) {
             len = readInt(mml, pos, st.defLen);
         } else if (st.defLenIsClock) {
             // l%N でデフォルト音長がクロック値の場合
-            directTicks = st.defLen;
+            directTicks = tickFromInt(st.defLen);
         } else {
             len = st.defLen;
         }
@@ -1894,7 +1915,7 @@ private:
                     tieBoundaries.push_back(ticks);  // ^境界位置（加算前）
                 if (pos < mml.size() && mml[pos] == '%') {
                     pos++;
-                    ticks += readInt(mml, pos, 0);
+                    ticks += tickFromInt(readInt(mml, pos, 0));
                 } else {
                     int elen = 0;
                     if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
@@ -1903,9 +1924,9 @@ private:
                         elen = st.defLen;
                     if (elen <= 0) elen = 4;
                     uint32_t t0 = (st.defLenIsClock && elen == st.defLen)
-                                  ? static_cast<uint32_t>(elen) : st.wholeTick / elen;
+                                  ? tickFromInt(elen) : tickFromInt(st.wholeTick / elen);
                     int d = static_cast<int>(t0);
-                    while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
+                    while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += tickFromInt(d); }
                     ticks += t0;
                 }
             }
@@ -1915,7 +1936,7 @@ private:
                 pos++;
                 while (pos < mml.size() && (mml[pos] == ' ' || mml[pos] == '\t')) pos++;
                 if (pos >= mml.size()) { tieOut = true; break; }
-                char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
+                char nc = toLower(mml[pos]);
                 if (!(nc >= 'a' && nc <= 'g')) { tieOut = true; break; }
                 pos++;
                 if (pos < mml.size() && (mml[pos]=='+' || mml[pos]=='#' || mml[pos]=='-')) pos++;
@@ -1924,21 +1945,21 @@ private:
                 int tlen = 0;
                 if (pos < mml.size() && mml[pos] == '%') {
                     pos++;
-                    ticks += readInt(mml, pos, 0);
+                    ticks += tickFromInt(readInt(mml, pos, 0));
                 } else if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos]))) {
                     tlen = readInt(mml, pos, st.defLen);
                     // ゼロ除算防止: &c0 等でtlenが0の場合はデフォルト音長にフォールバック
                     if (tlen <= 0) tlen = st.defLen > 0 ? st.defLen : 4;
-                    uint32_t t0 = st.wholeTick / tlen;
+                    uint32_t t0 = tickFromInt(st.wholeTick / tlen);
                     int d = static_cast<int>(t0);
-                    while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
+                    while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += tickFromInt(d); }
                     ticks += t0;
                 } else {
                     // defLenIsClock時はクロック直接値を使用
                     uint32_t t0 = st.defLenIsClock
-                                  ? static_cast<uint32_t>(st.defLen) : st.wholeTick / st.defLen;
+                                  ? tickFromInt(st.defLen) : tickFromInt(st.wholeTick / st.defLen);
                     int d = static_cast<int>(t0);
-                    while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += d; }
+                    while (pos < mml.size() && mml[pos] == '.') { pos++; d >>= 1; t0 += tickFromInt(d); }
                     ticks += t0;
                 }
             }
@@ -1962,10 +1983,11 @@ private:
         if (st.tieActive && st.tieNote == noteNum) {
             // 前のNOTE_OFFを探して除去し、新しい位置に再配置
             // （最後のNOTE_OFFイベントを末尾から検索）
-            for (int i = static_cast<int>(events.size()) - 1; i >= 0; i--) {
-                if (events[i].type == MmlEventType::NOTE_OFF &&
-                    events[i].note == noteNum && events[i].channel == ch) {
-                    events.erase(events.begin() + i);
+            for (size_t i = events.size(); i > 0; i--) {
+                const size_t idx = i - 1;
+                if (events[idx].type == MmlEventType::NOTE_OFF &&
+                    events[idx].note == noteNum && events[idx].channel == ch) {
+                    events.erase(events.begin() + static_cast<std::vector<MmlEvent>::difference_type>(idx));
                     break;
                 }
             }
@@ -2083,7 +2105,7 @@ private:
         tieOut = false;
         if (len <= 0) len = 4;
         int wt = st.wholeTick;
-        uint32_t ticks = wt / len;
+        uint32_t ticks = tickFromInt(wt / len);
         // 複数ドット対応: b4. = 24+12, b4.. = 24+12+6, b4... = 24+12+6+3
         { uint32_t add = ticks / 2;
           for (int d = 0; d < dotCount && add > 0; d++) {
@@ -2107,7 +2129,7 @@ private:
             if (pos < mml.size() && mml[pos] == '%') {
                 // ^%N: クロック直接指定（付点なし）
                 pos++;
-                ticks += readInt(mml, pos, 0);
+                ticks += tickFromInt(readInt(mml, pos, 0));
             } else {
                 int elen = 0;
                 if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
@@ -2115,7 +2137,7 @@ private:
                 else
                     elen = st.defLen;  // Z80互換: デフォルト音長(lコマンド値)
                 if (elen <= 0) elen = 4;
-                uint32_t et = applyDots(wt / elen, mml, pos);
+                uint32_t et = applyDots(tickFromInt(wt / elen), mml, pos);
                 ticks += et;
             }
         }
@@ -2132,7 +2154,7 @@ private:
                 tieOut = true;
                 break;
             }
-            char nc = std::tolower(static_cast<unsigned char>(mml[pos]));
+            char nc = toLower(mml[pos]);
             if (!(nc >= 'a' && nc <= 'g')) {
                 // タイ先が音名でない場合も行またぎとみなす
                 tieOut = true;
@@ -2151,7 +2173,7 @@ private:
             if (pos < mml.size() && mml[pos] == '%') {
                 // &note%N: クロック直接指定（付点なし）
                 pos++;
-                ticks += readInt(mml, pos, 0);
+                ticks += tickFromInt(readInt(mml, pos, 0));
                 tlen = 0;  // ^のデフォルト長には使わない
             } else {
                 if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
@@ -2160,7 +2182,7 @@ private:
                     tlen = st.defLen;
                 // ゼロ除算防止: &note0 等でtlenが0の場合はデフォルト音長にフォールバック
                 if (tlen <= 0) tlen = st.defLen > 0 ? st.defLen : 4;
-                uint32_t tt = applyDots(wt / tlen, mml, pos);
+                uint32_t tt = applyDots(tickFromInt(wt / tlen), mml, pos);
                 ticks += tt;
             }
             // ^ もここで処理（^はZ80 tie bitでKEY_OFF境界になる）
@@ -2171,7 +2193,7 @@ private:
                 if (pos < mml.size() && mml[pos] == '%') {
                     // ^%N: クロック直接指定
                     pos++;
-                    ticks += readInt(mml, pos, 0);
+                    ticks += tickFromInt(readInt(mml, pos, 0));
                 } else {
                     int elen2 = 0;
                     if (pos < mml.size() && std::isdigit(static_cast<unsigned char>(mml[pos])))
@@ -2179,7 +2201,7 @@ private:
                     else
                         elen2 = (tlen > 0) ? tlen : st.defLen;
                     if (elen2 <= 0) elen2 = 4;
-                    uint32_t et2 = applyDots(wt / elen2, mml, pos);
+                    uint32_t et2 = applyDots(tickFromInt(wt / elen2), mml, pos);
                     ticks += et2;
                 }
             }
@@ -2218,7 +2240,7 @@ private:
             int digits = 0;
             while (pos < s.size() && std::isxdigit(static_cast<unsigned char>(s[pos]))) {
                 if (++digits > 7) break;  // オーバーフロー防止
-                char c = std::tolower(static_cast<unsigned char>(s[pos]));
+                char c = toLower(s[pos]);
                 val = val * 16 + (c >= 'a' ? c - 'a' + 10 : c - '0');
                 pos++;
             }

@@ -121,18 +121,18 @@ public:
     void setEvents(int ch, const std::vector<MmlEvent>& evts)
     {
         if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
-        m_channels[ch].events      = evts;
-        m_channels[ch].eventIdx    = 0;
-        m_channels[ch].noteOn      = false;
+        m_channels[chIndex(ch)].events      = evts;
+        m_channels[chIndex(ch)].eventIdx    = 0;
+        m_channels[chIndex(ch)].noteOn      = false;
     }
 
     // ── MML イベント列をムーブセット（MucFile用・ゼロコピー）─
     void setEvents(int ch, std::vector<MmlEvent>&& evts)
     {
         if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
-        m_channels[ch].events      = std::move(evts);
-        m_channels[ch].eventIdx    = 0;
-        m_channels[ch].noteOn      = false;
+        m_channels[chIndex(ch)].events      = std::move(evts);
+        m_channels[chIndex(ch)].eventIdx    = 0;
+        m_channels[chIndex(ch)].noteOn      = false;
     }
 
     // ── 音色設定（音色番号ベース・0〜127）────────────────
@@ -155,12 +155,12 @@ public:
         setWholeTick(muc.wholeTick);
         // 旧曲のイベントをクリア（チャンネル数が減った場合の残留防止）
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++)
-            m_channels[ch].events.clear();
+            m_channels[chIndex(ch)].events.clear();
         bool hasLoop = false;
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            if (!muc.channelEvents[ch].empty())
-                setEvents(ch, muc.channelEvents[ch]);
-            for (const auto& ev : muc.channelEvents[ch])
+            if (!muc.channelEvents[chIndex(ch)].empty())
+                setEvents(ch, muc.channelEvents[chIndex(ch)]);
+            for (const auto& ev : muc.channelEvents[chIndex(ch)])
                 if (ev.type == MmlEventType::LOOP_POINT) { hasLoop = true; break; }
         }
         m_loop = hasLoop;
@@ -206,14 +206,14 @@ public:
         // 全チャンネルのランタイム状態をフルリセット（libmucom88-mml#2）
         // イベント列(events)は保持し、再生位置とランタイム状態のみ初期化
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            auto& st = m_channels[ch];
+            auto& st = m_channels[chIndex(ch)];
             auto savedEvents = std::move(st.events);
             st = ChannelState{};
             st.events = std::move(savedEvents);
         }
         // 最初のTEMPOイベントを探して初期テンポを設定
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            for (const auto& ev : m_channels[ch].events) {
+            for (const auto& ev : m_channels[chIndex(ch)].events) {
                 if (ev.type == MmlEventType::TEMPO) {
                     m_globalTempo = ev.value;
                     break;
@@ -229,7 +229,7 @@ public:
             bool anyLoop = false;
             uint32_t maxEnd = 0;
             for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-                auto& st = m_channels[ch];
+                auto& st = m_channels[chIndex(ch)];
                 if (st.events.empty()) continue;
                 // イベント列からLOOP_POINTを探してhasLoopPointを事前設定
                 for (size_t i = 0; i < st.events.size(); i++) {
@@ -270,15 +270,15 @@ public:
             for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
-                m_engine->writeReg(port, 0xB4 + off, 0xC0);
+                m_engine->writeReg(port, reg8(0xB4 + off), 0xC0);
             }
             // リズム楽器 IL 初期化: L+R + Level 31
             m_rhythmIL.fill(0xDF);
             for (int i = 0; i < 6; i++)
-                m_engine->writeReg(0, 0x18 + i, m_rhythmIL[i]);
+                m_engine->writeReg(0, reg8(0x18 + i), m_rhythmIL[chIndex(i)]);
             // SSG トーンレジスタ初期化
             for (int i = 0; i < 6; i++)
-                m_engine->writeReg(0, i, 0x00);
+                m_engine->writeReg(0, reg8(i), 0x00);
             // SSG ミキサー: トーン有効, ノイズ無効（MUCOM88互換）
             m_ssgMixer = 0x38;
             m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
@@ -293,14 +293,14 @@ public:
 
             // FM音色を再適用
             for (int fi = 0; fi < MAX_FM_CHANNELS; fi++)
-                fmApplyPatch(fi, m_fmPatchNo[fi]);
+                fmApplyPatch(fi, m_fmPatchNo[fmIndex(fi)]);
         }
 
         // Z80互換: tick 0 のイベントを即時処理
         // Z80ドライバーはplay()時にMMLデータを即座に読み込み、最初のノートを設定する。
         // Timer-Bの最初の発火を待たない。これにより1ティック分の遅延を回避。
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            auto& st = m_channels[ch];
+            auto& st = m_channels[chIndex(ch)];
             if (st.events.empty()) continue;
             if (isADPCMB(ch) && m_voiceDuckState.load(std::memory_order_acquire) != VoiceDuckState::Idle) continue;
             processEvents(ch, m_globalTick);  // m_globalTick = 0
@@ -340,13 +340,13 @@ public:
             // FM: 音色 + 音量 + PAN
             for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
                 int ch = fmMmlCh(fi);
-                if (m_channels[ch].hijacked) continue;
-                fmApplyPatch(fi, m_fmPatchNo[fi]);
-                fmSetVolume(fi, m_channels[ch].volume);
+                if (m_channels[chIndex(ch)].hijacked) continue;
+                fmApplyPatch(fi, m_fmPatchNo[fmIndex(fi)]);
+                fmSetVolume(fi, m_channels[chIndex(ch)].volume);
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
-                m_engine->writeReg(port, 0xB4 + off,
-                    static_cast<uint8_t>(panToReg(m_channels[ch].pan)));
+                m_engine->writeReg(port, reg8(0xB4 + off),
+                    reg8(panToReg(m_channels[chIndex(ch)].pan)));
             }
             // SSG: ミキサー復元
             m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
@@ -355,10 +355,10 @@ public:
             int adjustedTL = std::clamp(static_cast<int>(m_rhythmTL) - rhythmAtt, 0, 63);
             m_engine->writeReg(0, REG_RHYTHM_TL, static_cast<uint8_t>(adjustedTL & 0x3F));
             for (int i = 0; i < 6; i++)
-                m_engine->writeReg(0, 0x18 + i, m_rhythmIL[i]);
+                m_engine->writeReg(0, reg8(0x18 + i), m_rhythmIL[chIndex(i)]);
             // ADPCM-B: ボリューム復元（ボイス再生中はスキップ）
             if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
-                adpcmbSetVolume(m_channels[10].volume);
+                adpcmbSetVolume(m_channels[chIndex(10)].volume);
             }
         }
         m_playing = true;
@@ -376,16 +376,16 @@ public:
     }
 
     // チャンネル状態取得（UI表示用）
-    [[nodiscard]] bool chNoteOn(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOn : false; }
-    [[nodiscard]] int  chNote(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].currentNote : 0; }
-    [[nodiscard]] int  chVolume(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].volume : 0; }
-    [[nodiscard]] int  chPan(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].pan : 3; }
-    [[nodiscard]] int  chReverb(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].reverb.value : 0; }
+    [[nodiscard]] bool chNoteOn(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].noteOn : false; }
+    [[nodiscard]] int  chNote(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].currentNote : 0; }
+    [[nodiscard]] int  chVolume(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].volume : 0; }
+    [[nodiscard]] int  chPan(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].pan : 3; }
+    [[nodiscard]] int  chReverb(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].reverb.value : 0; }
     // noteOnトリガーカウンター（UI activity検出用、advance()毎にインクリメント）
     // chNoteOn()はワンショット楽器で一瞬falseになるため、カウンターで検出する
-    [[nodiscard]] uint32_t chNoteOnCount(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].noteOnCount : 0; }
+    [[nodiscard]] uint32_t chNoteOnCount(int ch) const { return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].noteOnCount : 0; }
     // FM パッチ番号取得（fi=FMインデックス 0-5）
-    [[nodiscard]] int  fmPatchNo(int fi) const { return (fi >= 0 && fi < MAX_FM_CHANNELS) ? m_fmPatchNo[fi] : -1; }
+    [[nodiscard]] int  fmPatchNo(int fi) const { return (fi >= 0 && fi < MAX_FM_CHANNELS) ? m_fmPatchNo[fmIndex(fi)] : -1; }
 
     // ── チャンネルハイジャック（効果音割り込み用）──────────
     // BGM再生中のチャンネルをSE再生に一時的に奪う。
@@ -396,7 +396,7 @@ public:
     {
         if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
         if (isRhythm(ch) || isADPCMB(ch)) return;
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         st.hijacked = true;
         if (m_engine && st.noteOn) {
             if      (isFM(ch))  fmKeyOff(toFMIndex(ch));
@@ -406,17 +406,17 @@ public:
     void releaseChannel(int ch)
     {
         if (ch < 0 || ch >= MAX_MML_CHANNELS) return;
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         if (!st.hijacked) return;
         st.hijacked = false;
         if (!m_engine) return;
         if (isFM(ch)) {
             int fi = toFMIndex(ch);
-            fmApplyPatch(fi, m_fmPatchNo[fi]);
+            fmApplyPatch(fi, m_fmPatchNo[fmIndex(fi)]);
             fmSetVolume(fi, st.volume);
             int port = fmPort(fi);
             int off  = fmOffset(fi);
-            m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panToReg(st.pan)));
+            m_engine->writeReg(port, reg8(0xB4 + off), reg8(panToReg(st.pan)));
         } else if (isSSG(ch)) {
             m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
             if (st.ssgEnv.softEnv) {
@@ -428,7 +428,7 @@ public:
     }
     bool isChannelHijacked(int ch) const
     {
-        return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[ch].hijacked : false;
+        return (ch >= 0 && ch < MAX_MML_CHANNELS) ? m_channels[chIndex(ch)].hijacked : false;
     }
 
     // ── ADPCM-B ボイス再生（IFmEngine パススルー + Kトラック優先制御）──
@@ -446,9 +446,9 @@ public:
     void playVoice(int voiceId) noexcept {
         if (!m_engine) return;
         // BGMのKトラック（ADPCM-B）を停止してからボイス再生を開始
-        if (m_channels[10].noteOn) {
+        if (m_channels[chIndex(10)].noteOn) {
             adpcmbKeyOff();
-            m_channels[10].noteOn = false;
+            m_channels[chIndex(10)].noteOn = false;
         }
         // 状態遷移を先に行い、recalcGlobalAtt()内のADPCM-Bガードを有効化
         m_voiceDuckState.store(VoiceDuckState::Playing, std::memory_order_release);
@@ -539,7 +539,7 @@ public:
                 for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
                     int port = fmPort(fi);
                     int off  = fmOffset(fi);
-                    m_seEngine->writeReg(port, 0xB4 + off, 0xC0);
+                    m_seEngine->writeReg(port, reg8(0xB4 + off), 0xC0);
                 }
                 m_seEngine->writeReg(0, REG_SSG_MIXER, 0x3F);
                 m_seEngine->writeReg(0, REG_TIMER_CTRL, 0x3A);
@@ -590,12 +590,12 @@ public:
         if (slotIdx < 0) return -1;
 
         // シーケンス情報を設定
-        auto& slot = m_seSlots[slotIdx];
+        auto& slot = m_seSlots[seIndex(slotIdx)];
         slot.isSequence = true;
         slot.seqNoteCount = noteCount;
         slot.seqCurrentNote = 0;
         for (int i = 0; i < noteCount; i++)
-            slot.seqNotes[i] = notes[i];
+            slot.seqNotes[seIndex(i)] = notes[i];
 
         return slotIdx;
     }
@@ -617,17 +617,17 @@ public:
     {
         if (!notes || noteCount <= 0) return -1;
         if (slot < 0 || slot >= MAX_SE_SLOTS) return -1;
-        noteCount = std::clamp(noteCount, 1, (int)SeSlot::MAX_SEQ_NOTES);
+        noteCount = std::clamp(noteCount, 1, static_cast<int>(SeSlot::MAX_SEQ_NOTES));
 
         int slotIdx = playSeOnSlot(slot, patch, notes[0].startNote, velocity, notes[0].durationMs);
         if (slotIdx < 0) return -1;
 
-        auto& s = m_seSlots[slotIdx];
+        auto& s = m_seSlots[seIndex(slotIdx)];
         s.isSequence = true;
         s.seqNoteCount = noteCount;
         s.seqCurrentNote = 0;
         for (int i = 0; i < noteCount; i++)
-            s.seqNotes[i] = notes[i];
+            s.seqNotes[seIndex(i)] = notes[i];
 
         return slotIdx;
     }
@@ -635,7 +635,7 @@ public:
     void stopSe(int seSlot) noexcept
     {
         if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
-        auto& slot = m_seSlots[seSlot];
+        auto& slot = m_seSlots[seIndex(seSlot)];
         if (!slot.active) return;
 
         if (m_seMode == SeMode::Rich) {
@@ -658,7 +658,7 @@ public:
     void setSeFrequency(int seSlot, int noteNum) noexcept
     {
         if (seSlot < 0 || seSlot >= MAX_SE_SLOTS) return;
-        auto& slot = m_seSlots[seSlot];
+        auto& slot = m_seSlots[seIndex(seSlot)];
         if (!slot.active) return;
         IFmEngine* eng = (m_seMode == SeMode::Rich) ? m_seEngine : m_engine;
         if (eng) eng->setFrequency(slot.fmIndex, noteNum);
@@ -667,7 +667,7 @@ public:
 
     [[nodiscard]] bool isSeActive(int seSlot) const
     {
-        return (seSlot >= 0 && seSlot < MAX_SE_SLOTS) ? m_seSlots[seSlot].active : false;
+        return (seSlot >= 0 && seSlot < MAX_SE_SLOTS) ? m_seSlots[seIndex(seSlot)].active : false;
     }
 
     [[nodiscard]] int activeSeCount() const
@@ -856,7 +856,7 @@ public:
                     if (m_perChannelLoop) {
                         // per-channel独立ループ（Issue #62）
                         for (int ch2 = 0; ch2 < MAX_MML_CHANNELS; ch2++) {
-                            auto& st2 = m_channels[ch2];
+                            auto& st2 = m_channels[chIndex(ch2)];
                             if (st2.events.empty() || !st2.loop.hasPoint) continue;
                             if (m_globalTick >= st2.loop.nextRestartTick) {
                                 perChannelRestart(ch2);
@@ -870,7 +870,7 @@ public:
                         if (chTick >= m_commonEndTick) {
                             globalLoopRestart();
                             for (int ch2 = 0; ch2 < MAX_MML_CHANNELS; ch2++) {
-                                if (m_channels[ch2].events.empty()) continue;
+                                if (m_channels[chIndex(ch2)].events.empty()) continue;
                                 processEvents(ch2, m_globalTick);
                             }
                         }
@@ -881,13 +881,13 @@ public:
                 if (m_engine) {
                     bool anyCsm = false;
                     for (int ch2 = 0; ch2 < MAX_MML_CHANNELS; ch2++)
-                        if (m_channels[ch2].csm.enabled) { anyCsm = true; break; }
+                        if (m_channels[chIndex(ch2)].csm.enabled) { anyCsm = true; break; }
                     m_engine->writeReg(0, REG_TIMER_CTRL, anyCsm ? 0x7A : 0x3A);
                 }
 
                 // 全チャンネルを同じtickで同期処理（INT3割り込み相当）
                 for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-                    auto& st = m_channels[ch];
+                    auto& st = m_channels[chIndex(ch)];
                     if (st.events.empty()) continue;
                     if (st.eventIdx >= st.events.size()) {
                         // Issue #68: Z80互換 — イベント消費済みチャンネルの即時リスタート
@@ -895,7 +895,7 @@ public:
                             // per-channelモードに移行（初回リスタート時）
                             m_perChannelLoop = true;
                             for (int c = 0; c < MAX_MML_CHANNELS; c++) {
-                                auto& sc = m_channels[c];
+                                auto& sc = m_channels[chIndex(c)];
                                 if (sc.events.empty() || !sc.loop.hasPoint) continue;
                                 sc.loop.loopLen = sc.loop.endTick - sc.loop.tick;
                                 if (sc.loop.loopLen == 0) sc.loop.loopLen = 1;
@@ -904,7 +904,7 @@ public:
                             }
                             // イベント消費済みの全チャンネルを即座にリスタート（Issue #71）
                             for (int c = 0; c < MAX_MML_CHANNELS; c++) {
-                                auto& sc = m_channels[c];
+                                auto& sc = m_channels[chIndex(c)];
                                 if (sc.events.empty() || !sc.loop.hasPoint) continue;
                                 if (sc.eventIdx >= sc.events.size()) {
                                     perChannelRestart(c);
@@ -985,6 +985,13 @@ public:
     }
 
 private:
+    [[nodiscard]] static size_t chIndex(int ch) { return static_cast<size_t>(ch); }
+    [[nodiscard]] static size_t fmIndex(int fi) { return static_cast<size_t>(fi); }
+    [[nodiscard]] static size_t seIndex(int seSlot) { return static_cast<size_t>(seSlot); }
+    [[nodiscard]] static uint8_t reg8(int value) { return static_cast<uint8_t>(value); }
+    [[nodiscard]] static uint16_t word16(int value) { return static_cast<uint16_t>(value); }
+    [[nodiscard]] static std::streamsize streamSize(size_t value) { return static_cast<std::streamsize>(value); }
+
     // ── グローバル減衰（ダッキング内部API）─────────────────
     void setGlobalAttenuation(int att) noexcept
     {
@@ -1006,7 +1013,7 @@ private:
 
         // 全チャンネル KEY_OFF + 状態リセット + Lポイントへ巻き戻し
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            auto& st = m_channels[ch];
+            auto& st = m_channels[chIndex(ch)];
             if (st.events.empty()) continue;
 
             // KEY_OFF（ハイジャック中chはレジスタ操作のみスキップ、簿記は維持: Issue #54）
@@ -1038,28 +1045,28 @@ private:
         // Timer-B再計算 + 音色/PAN/音量復元（ハイジャック中チャンネルはスキップ）
         recalcTimerB();
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
-            if (m_channels[fmMmlCh(fi)].hijacked) continue;
-            fmApplyPatch(fi, m_fmPatchNo[fi]);
+            if (m_channels[chIndex(fmMmlCh(fi))].hijacked) continue;
+            fmApplyPatch(fi, m_fmPatchNo[fmIndex(fi)]);
         }
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
             int ch = fmMmlCh(fi);
-            if (m_channels[ch].hijacked) continue;
-            fmSetVolume(fi, m_channels[ch].volume);
+            if (m_channels[chIndex(ch)].hijacked) continue;
+            fmSetVolume(fi, m_channels[chIndex(ch)].volume);
         }
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             if (isFM(ch)) {
-                if (m_channels[ch].hijacked) continue;
+                if (m_channels[chIndex(ch)].hijacked) continue;
                 int fi = toFMIndex(ch);
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
-                m_engine->writeReg(port, 0xB4 + off,
-                    static_cast<uint8_t>(panToReg(m_channels[ch].pan)));
+                m_engine->writeReg(port, reg8(0xB4 + off),
+                    reg8(panToReg(m_channels[chIndex(ch)].pan)));
             }
         }
         m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
         // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
         if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
-            adpcmbSetVolume(m_channels[10].volume);
+            adpcmbSetVolume(m_channels[chIndex(10)].volume);
         }
 
         // per-channel独立ループの初期化（Issue #62/#68）
@@ -1067,7 +1074,7 @@ private:
         // 2回目以降は各チャンネルが独立した周期（commonEndTick - loopTick）でループする。
         m_perChannelLoop = true;
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            auto& st = m_channels[ch];
+            auto& st = m_channels[chIndex(ch)];
             if (st.events.empty() || !st.loop.hasPoint) continue;
             st.loop.loopLen = m_commonEndTick - st.loop.tick;
             if (st.loop.loopLen == 0) st.loop.loopLen = 1;
@@ -1081,7 +1088,7 @@ private:
     // Z80互換: 各チャンネルが独立にend marker到達→DATA TOPジャンプ
     void perChannelRestart(int ch)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
 
         // KEY_OFF（ハイジャック中chはレジスタ操作のみスキップ、簿記は維持: Issue #54）
         if (st.noteOn) {
@@ -1114,12 +1121,12 @@ private:
         if (!st.hijacked) {
             if (isFM(ch)) {
                 int fi = toFMIndex(ch);
-                fmApplyPatch(fi, m_fmPatchNo[fi]);
+                fmApplyPatch(fi, m_fmPatchNo[fmIndex(fi)]);
                 fmSetVolume(fi, st.volume);
                 int port = fmPort(fi);
                 int off  = fmOffset(fi);
-                m_engine->writeReg(port, 0xB4 + off,
-                    static_cast<uint8_t>(panToReg(st.pan)));
+                m_engine->writeReg(port, reg8(0xB4 + off),
+                    reg8(panToReg(st.pan)));
             }
             if (isSSG(ch)) {
                 m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
@@ -1456,7 +1463,7 @@ private:
         m_engine->writeReg(port, static_cast<uint8_t>(addr & 0xFF), static_cast<uint8_t>(data & 0xFF));
         // リズム楽器 IL レジスタ（0x18-0x1D）への書き込みを追跡
         if (addr >= 0x18 && addr <= 0x1D) {
-            m_rhythmIL[addr - 0x18] = static_cast<uint8_t>(data & 0xFF);
+            m_rhythmIL[chIndex(addr - 0x18)] = static_cast<uint8_t>(data & 0xFF);
         }
     }
 
@@ -1467,8 +1474,8 @@ private:
     {
         int inst = ev.note & 0x07;
         if (inst >= 6) return;
-        m_rhythmIL[inst] = static_cast<uint8_t>((m_rhythmIL[inst] & 0xC0) | (ev.value & 0x1F));
-        if (m_engine) m_engine->writeReg(0, static_cast<uint8_t>(0x18 + inst), m_rhythmIL[inst]);
+        m_rhythmIL[chIndex(inst)] = static_cast<uint8_t>((m_rhythmIL[chIndex(inst)] & 0xC0) | (ev.value & 0x1F));
+        if (m_engine) m_engine->writeReg(0, reg8(0x18 + inst), m_rhythmIL[chIndex(inst)]);
     }
 
     // ── PORTAMENTOイベント処理 ───────────────────────────
@@ -1564,7 +1571,7 @@ private:
     // =====================================================================
     void processEvents(int ch, uint32_t tick)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         // ハイジャック中（SE割り込み中）chへのBGM由来レジスタ書き込みを単一窓口で抑制（Issue #54）。
         // 主ループ・ループ復帰3経路（per-channel復帰/global復帰/per-channel移行）・tick0処理の
         // 全呼び出し元がここで保護される。advanceEventsSilentがhijacked中もst.noteOn等の簿記を維持するため、
@@ -1732,13 +1739,13 @@ private:
                     int freq = ev.vibDelay & 0x07;
                     int pms  = ev.vibRate & 0x07;
                     int ams  = ev.vibDepth & 0x03;
-                    m_engine->writeReg(0, REG_LFO_CTRL, static_cast<uint8_t>(freq | 0x08));
+                    m_engine->writeReg(0, REG_LFO_CTRL, reg8(freq | 0x08));
                     int fi   = toFMIndex(ch);
                     int port = fmPort(fi);
                     int off  = fmOffset(fi);
                     int panBits = panToReg(st.pan) & 0xC0;
-                    m_engine->writeReg(port, 0xB4 + off,
-                        static_cast<uint8_t>(panBits | ((ams & 0x03) << 4) | (pms & 0x07)));
+                    m_engine->writeReg(port, reg8(0xB4 + off),
+                        reg8(panBits | ((ams & 0x03) << 4) | (pms & 0x07)));
                 }
                 break;
             case MmlEventType::CSM_MODE:
@@ -1773,7 +1780,7 @@ private:
     // =====================================================================
     void advanceEventsSilent(int ch, uint32_t tick)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         uint32_t chTick = (m_perChannelLoop && st.loop.hasPoint)
                         ? (tick - st.loop.tickBase)
                         : (tick - m_loopTickOffset);
@@ -1789,7 +1796,7 @@ private:
             case MmlEventType::TEMPO:    m_globalTempo = ev.value; break;
             case MmlEventType::VOLUME:   st.volume = ev.value; break;
             case MmlEventType::PATCH:
-                if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
+                if (isFM(ch))  m_fmPatchNo[fmIndex(toFMIndex(ch))] = ev.value;
                 if (isSSG(ch)) {
                     int idx = ev.value & 0x0F;
                     if (idx < 16) {
@@ -1858,7 +1865,7 @@ private:
         // LFOランタイム状態をリセット（ノートオンごとに遅延から再開）
         // Z80 LFORST+LFORST2: delay counter = delay, peak counter = peak/2(SRL A),
         // waveform position = initial depth, rate counter = rate
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         lfoReset(st.lfo);
 
         if      (isFM(ch))     fmKeyOn(toFMIndex(ch), noteNum, velocity);
@@ -1896,7 +1903,7 @@ private:
             int fi = toFMIndex(ch);
             int port = fmPort(fi);
             int off  = fmOffset(fi);
-            m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panToReg(pan)));
+            m_engine->writeReg(port, reg8(0xB4 + off), reg8(panToReg(pan)));
         }
         // SSG: パンなし（モノラル）
         else if (isADPCMB(ch)) {
@@ -1912,8 +1919,8 @@ private:
             if (inst < 6) {
                 // ILレジスタのPANビットのみ更新（レベルは保持）。Z80 STE2(music.asm:975-1003)は
                 // PSGOUT で即時に reg(0x18+i) へ書き込むため、ここでも即時反映する（#75）
-                m_rhythmIL[inst] = static_cast<uint8_t>((lr << 6) | (m_rhythmIL[inst] & 0x1F));
-                if (m_engine) m_engine->writeReg(0, static_cast<uint8_t>(0x18 + inst), m_rhythmIL[inst]);
+                m_rhythmIL[chIndex(inst)] = static_cast<uint8_t>((lr << 6) | (m_rhythmIL[chIndex(inst)] & 0x1F));
+                if (m_engine) m_engine->writeReg(0, reg8(0x18 + inst), m_rhythmIL[chIndex(inst)]);
             }
         }
     }
@@ -1922,11 +1929,11 @@ private:
     {
         if (isFM(ch)) {
             int fi = toFMIndex(ch);
-            m_fmPatchNo[fi] = patchNo;
+            m_fmPatchNo[fmIndex(fi)] = patchNo;
             fmApplyPatch(fi, patchNo);
             // Z80 OTOPST (line 1172): CALL STENV → CALL STVOL
             // パッチロード後にSTVOLで現在のvolumeをキャリアTLに反映
-            fmSetVolume(fi, m_channels[ch].volume);
+            fmSetVolume(fi, m_channels[chIndex(ch)].volume);
         } else if (isSSG(ch)) {
             // SSG: @N でソフトウェアエンベロープのプリセットを選択
             // Z80 OTOSSG: SSGDAT テーブルから6バイト(AL,AR,DR,SL,SR,RR)をロードし
@@ -1991,8 +1998,8 @@ private:
     {
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             if (!isSSG(ch)) continue;
-            if (m_channels[ch].hijacked) continue;
-            auto& cst = m_channels[ch];
+            if (m_channels[chIndex(ch)].hijacked) continue;
+            auto& cst = m_channels[chIndex(ch)];
             int si = toSSGIndex(ch);
 
             {
@@ -2020,7 +2027,7 @@ private:
                 }
                 if (amp > 15) amp = 15;
                 if (amp < 0) amp = 0;
-                m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(amp));
+                m_engine->writeReg(0, reg8(REG_SSG_AMP_A + si), static_cast<uint8_t>(amp));
             }
         }
     }
@@ -2035,8 +2042,8 @@ private:
         // Z80互換: チャンネルデータ終了後はFMSUB0が呼ばれないため停止
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
             if (!isFM(ch)) continue;
-            if (m_channels[ch].hijacked) continue;
-            auto& cst = m_channels[ch];
+            if (m_channels[chIndex(ch)].hijacked) continue;
+            auto& cst = m_channels[chIndex(ch)];
             if (!cst.reverb.active) continue;
             // チャンネル終了後は停止（Z80: データ終了後FMSUB0不呼び出し）
             if (cst.eventIdx >= cst.events.size()) {
@@ -2058,8 +2065,8 @@ private:
         // - m_loop=true + commonEndTick==0: L無し曲 → ループ不可、残留音防止のため停止
         if (m_loop && m_commonEndTick > 0) return false;
         for (int ch = 0; ch < MAX_MML_CHANNELS; ch++) {
-            if (m_channels[ch].events.empty()) continue;
-            if (m_channels[ch].eventIdx < m_channels[ch].events.size())
+            if (m_channels[chIndex(ch)].events.empty()) continue;
+            if (m_channels[chIndex(ch)].eventIdx < m_channels[chIndex(ch)].events.size())
                 return false;
         }
         return true;
@@ -2072,15 +2079,15 @@ private:
         if (!m_engine) return;
         for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
             int ch = fmMmlCh(fi);
-            if (m_channels[ch].hijacked) continue;
-            fmSetVolume(fi, m_channels[ch].volume);
+            if (m_channels[chIndex(ch)].hijacked) continue;
+            fmSetVolume(fi, m_channels[chIndex(ch)].volume);
         }
         for (int si = 0; si < MAX_SSG_CHANNELS; si++) {
             int ch = si + 3;
-            if (m_channels[ch].hijacked) continue;
-            if (m_channels[ch].noteOn) {
-                int vol = std::clamp(m_channels[ch].volume - m_globalAtt / 4, 0, 15);
-                m_engine->writeReg(0, REG_SSG_AMP_A + si, static_cast<uint8_t>(vol & 0x0F));
+            if (m_channels[chIndex(ch)].hijacked) continue;
+            if (m_channels[chIndex(ch)].noteOn) {
+                int vol = std::clamp(m_channels[chIndex(ch)].volume - m_globalAtt / 4, 0, 15);
+                m_engine->writeReg(0, reg8(REG_SSG_AMP_A + si), static_cast<uint8_t>(vol & 0x0F));
             }
         }
         int rhythmAtt = m_globalAtt * 63 / 127;
@@ -2088,7 +2095,7 @@ private:
         m_engine->writeReg(0, REG_RHYTHM_TL, static_cast<uint8_t>(adjustedTL & 0x3F));
         // ADPCM-B: ボイス再生中はスキップ（ボイスの音量はplayVoice()で管理）
         if (m_voiceDuckState.load(std::memory_order_acquire) == VoiceDuckState::Idle) {
-            adpcmbSetVolume(m_channels[10].volume);
+            adpcmbSetVolume(m_channels[chIndex(10)].volume);
         }
     }
 
@@ -2102,7 +2109,7 @@ private:
         m_ssgMixer = 0x3F;
         m_engine->writeReg(0, REG_SSG_MIXER, m_ssgMixer);
         for (int i = 0; i < MAX_SSG_CHANNELS; i++)
-            m_engine->writeReg(0, REG_SSG_AMP_A + i, 0x00);
+            m_engine->writeReg(0, reg8(REG_SSG_AMP_A + i), 0x00);
         // リズム全停止（Dump bit=1）
         m_engine->writeReg(0, REG_RHYTHM_KEY, 0x80 | 0x3F);
         // ADPCM-B: ボイス再生中はスキップ（ボイスはplayVoice()で独立管理）
@@ -2128,7 +2135,7 @@ private:
                     for (int fi = 0; fi < MAX_FM_CHANNELS; fi++) {
                         int port = fmPort(fi);
                         int off  = fmOffset(fi);
-                        m_seEngine->writeReg(port, 0xB4 + off, 0xC0);
+                        m_seEngine->writeReg(port, reg8(0xB4 + off), 0xC0);
                     }
                     m_seEngine->writeReg(0, REG_SSG_MIXER, 0x3F);
                     m_seEngine->writeReg(0, REG_TIMER_CTRL, 0x3A);
@@ -2149,7 +2156,7 @@ private:
     // チャンネルのランタイム状態をデフォルト値にリセット（ループ巻き戻し用）
     void resetChannelRuntime(int ch)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         st.currentNote  = 0;
         st.noteOnCount  = 0;
         st.reverb.active = false;
@@ -2188,7 +2195,7 @@ private:
     // restoreTempo=true: TEMPOイベントも復元（globalLoopRestart用）
     void replayEventsForStateRestore(int ch, bool restoreTempo)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         for (size_t i = 0; i < st.eventIdx; i++) {
             const auto& ev = st.events[i];
             switch (ev.type) {
@@ -2197,7 +2204,7 @@ private:
                 break;
             case MmlEventType::VOLUME:   st.volume = ev.value; break;
             case MmlEventType::PATCH:
-                if (isFM(ch))  m_fmPatchNo[toFMIndex(ch)] = ev.value;
+                if (isFM(ch))  m_fmPatchNo[fmIndex(toFMIndex(ch))] = ev.value;
                 if (isSSG(ch)) ssgApplyPreset(toSSGIndex(ch), ev.value);
                 break;
             case MmlEventType::PAN:       st.pan = ev.value; break;
@@ -2283,7 +2290,7 @@ private:
                 patch = &def->second;
         }
         if (patch) {
-            m_channels[fmMmlCh(fi)].cachedPatch = patch;
+            m_channels[chIndex(fmMmlCh(fi))].cachedPatch = patch;
             fmWritePatch(fi, *patch);
         }
     }
@@ -2298,36 +2305,36 @@ private:
         static const int slotOff[] = { 0, 8, 4, 12 };
         fmKeyOff(fi);
         for (int oi = 0; oi < 4; oi++)
-            m_engine->writeReg(port, 0x80 + slotOff[oi] + off, 0x0F);
+            m_engine->writeReg(port, reg8(0x80 + slotOff[oi] + off), 0x0F);
 
         // 音色パラメータ書き込み（MUCOM88 STENV: 6パラメータ×4オペレータ）
         for (int oi = 0; oi < 4; oi++) {
             int base = slotOff[oi] + off;
             const auto& op = patch.op[oi];
-            m_engine->writeReg(port, 0x30 + base,
+            m_engine->writeReg(port, reg8(0x30 + base),
                 static_cast<uint8_t>(((op.dt & 0x07) << 4) | (op.ml & 0x0F)));
-            m_engine->writeReg(port, 0x40 + base, static_cast<uint8_t>(op.tl & 0x7F));
-            m_engine->writeReg(port, 0x50 + base,
+            m_engine->writeReg(port, reg8(0x40 + base), static_cast<uint8_t>(op.tl & 0x7F));
+            m_engine->writeReg(port, reg8(0x50 + base),
                 static_cast<uint8_t>(((op.ks & 0x03) << 6) | (op.ar & 0x1F)));
-            m_engine->writeReg(port, 0x60 + base, static_cast<uint8_t>(((op.ame & 1) << 7) | (op.dr & 0x1F)));
-            m_engine->writeReg(port, 0x70 + base, static_cast<uint8_t>(op.sr & 0x1F));
-            m_engine->writeReg(port, 0x80 + base,
+            m_engine->writeReg(port, reg8(0x60 + base), static_cast<uint8_t>(((op.ame & 1) << 7) | (op.dr & 0x1F)));
+            m_engine->writeReg(port, reg8(0x70 + base), static_cast<uint8_t>(op.sr & 0x1F));
+            m_engine->writeReg(port, reg8(0x80 + base),
                 static_cast<uint8_t>(((op.sl & 0x0F) << 4) | (op.rr & 0x0F)));
         }
 
         // FB/ALG
-        m_engine->writeReg(port, 0xB0 + off,
+        m_engine->writeReg(port, reg8(0xB0 + off),
             static_cast<uint8_t>(((patch.fb & 0x07) << 3) | (patch.al & 0x07)));
         // パン
         int mmlCh = (fi < 3) ? fi : (fi - 3 + 7);
-        int panBits = panToReg(m_channels[mmlCh].pan);
-        m_engine->writeReg(port, 0xB4 + off, static_cast<uint8_t>(panBits));
+        int panBits = panToReg(m_channels[chIndex(mmlCh)].pan);
+        m_engine->writeReg(port, reg8(0xB4 + off), static_cast<uint8_t>(panBits));
     }
 
     // ── ソフトウェアLFO tick処理 ──────────────────────────
     void tickLfo(int ch)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         // 遅延カウントダウン
         if (st.lfo.delayCounter > 0) {
             st.lfo.delayCounter--;
@@ -2355,7 +2362,7 @@ private:
     // ── ポルタメント tick更新（Z80 PLLFO→PLSKI2互換）──────
     void tickPortamento(int ch)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         if (!st.porta.active) return;
 
         // F-Number(14bit = block<<11 | fnum)をステップ加算
@@ -2377,9 +2384,9 @@ private:
             int fi   = toFMIndex(ch);
             int port = fmPort(fi);
             int off  = fmOffset(fi);
-            m_engine->writeReg(port, 0xA4 + off,
+            m_engine->writeReg(port, reg8(0xA4 + off),
                 static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
-            m_engine->writeReg(port, 0xA0 + off, static_cast<uint8_t>(fnum & 0xFF));
+            m_engine->writeReg(port, reg8(0xA0 + off), static_cast<uint8_t>(fnum & 0xFF));
         } else if (isSSG(ch)) {
             int si = toSSGIndex(ch);
             int tp = st.porta.ssgPeriod ? st.porta.currentFnum : fnum;
@@ -2387,8 +2394,8 @@ private:
             if (st.porta.ssgPeriod && st.porta.ssgShift > 0) tp >>= st.porta.ssgShift;
             else if (!st.porta.ssgPeriod && block > 0) tp >>= block;
             tp = std::clamp(tp, 1, 0xFFF);
-            m_engine->writeReg(0, si * 2,     static_cast<uint8_t>(tp & 0xFF));
-            m_engine->writeReg(0, si * 2 + 1, static_cast<uint8_t>((tp >> 8) & 0x0F));
+            m_engine->writeReg(0, reg8(si * 2),     static_cast<uint8_t>(tp & 0xFF));
+            m_engine->writeReg(0, reg8(si * 2 + 1), static_cast<uint8_t>((tp >> 8) & 0x0F));
         }
     }
 
@@ -2399,7 +2406,7 @@ private:
     void csmKeyOn(int ch, int noteNum, int /*velocity*/)
     {
         if (!m_engine) return;
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
 
         // LFOランタイム状態をリセット（ノートオンごと）
         st.lfo.delayCounter = st.lfo.delay;
@@ -2448,7 +2455,7 @@ private:
     // ── ピッチ更新（デチューン + LFOオフセット適用）─────
     void updatePitch(int ch)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         if (!st.noteOn) return;
         // Z80(music.asm:1644-1676,1880-1892): SSG は detune(D命令)も LFO 同様、
         // octave-1 基準の SNUMB 周期に加算後 octave 回右シフトする → 実効 = (detune+lfo)>>octave。
@@ -2488,9 +2495,9 @@ private:
         }
         fnum = static_cast<uint16_t>(std::clamp(adjusted, 0, 0x7FF));
 
-        m_engine->writeReg(port, 0xA4 + off,
+        m_engine->writeReg(port, reg8(0xA4 + off),
             static_cast<uint8_t>(((block & 0x07) << 3) | ((fnum >> 8) & 0x07)));
-        m_engine->writeReg(port, 0xA0 + off, static_cast<uint8_t>(fnum & 0xFF));
+        m_engine->writeReg(port, reg8(0xA0 + off), static_cast<uint8_t>(fnum & 0xFF));
     }
 
     void fmUpdateFreq(int fi, int noteNum, int pitchOffset)
@@ -2503,7 +2510,7 @@ private:
         if (!m_engine) return;
         // デチューン + LFOオフセット適用
         int mmlCh = fmMmlCh(fi);
-        int offset = m_channels[mmlCh].detune + m_channels[mmlCh].lfo.pitchOffset;
+        int offset = m_channels[chIndex(mmlCh)].detune + m_channels[chIndex(mmlCh)].lfo.pitchOffset;
         fmWriteFreq(fi, noteNum, offset);
 
         uint8_t chKey = (fi < 3) ? static_cast<uint8_t>(fi) : static_cast<uint8_t>(fi - 3 + 4);
@@ -2535,14 +2542,14 @@ private:
         int port = fmPort(fi);
         int off  = fmOffset(fi);
         int mmlCh = fmMmlCh(fi);
-        const FmPatch* patch = m_channels[mmlCh].cachedPatch;
+        const FmPatch* patch = m_channels[chIndex(mmlCh)].cachedPatch;
         int al = patch ? patch->al : 4;
 
         for (int oi = 0; oi < 4; oi++) {
             int so = carrierOffsets[al & 7][oi];
             if (so < 0) break;
             int tl = std::clamp(tlBase + m_globalAtt, 0, 127);
-            m_engine->writeReg(port, 0x40 + so + off, static_cast<uint8_t>(tl));
+            m_engine->writeReg(port, reg8(0x40 + so + off), static_cast<uint8_t>(tl));
         }
     }
 
@@ -2589,8 +2596,8 @@ private:
         // SSG: ピリオド値にオフセット（符号反転: F-Number増=周波数上昇=ピリオド減少）
         int adjusted = static_cast<int>(tp) - pitchOffset;
         tp = static_cast<uint16_t>(std::clamp(adjusted, 1, 0xFFF));
-        m_engine->writeReg(0, si * 2,     static_cast<uint8_t>(tp & 0xFF));
-        m_engine->writeReg(0, si * 2 + 1, static_cast<uint8_t>((tp >> 8) & 0x0F));
+        m_engine->writeReg(0, reg8(si * 2),     static_cast<uint8_t>(tp & 0xFF));
+        m_engine->writeReg(0, reg8(si * 2 + 1), static_cast<uint8_t>((tp >> 8) & 0x0F));
     }
 
     void ssgUpdateFreq(int si, int noteNum, int pitchOffset)
@@ -2605,7 +2612,7 @@ private:
         // トーンピリオド設定（デチューン + LFOオフセット適用）
         // #70: SSG は detune も octave 縮小（detune+lfo を一括して octave 右シフト）。
         int mmlCh = si + 3;
-        int offset = ssgScaleLfo(m_channels[mmlCh].detune + m_channels[mmlCh].lfo.pitchOffset,
+        int offset = ssgScaleLfo(m_channels[chIndex(mmlCh)].detune + m_channels[chIndex(mmlCh)].lfo.pitchOffset,
                                  noteNum);
         ssgWriteFreq(si, noteNum, offset);
 
@@ -2619,7 +2626,7 @@ private:
     // Phase: 1=ATTACK, 2=DECAY, 3=SUSTAIN, 4=RELEASE
     void ssgTickEnvelope(int ch)
     {
-        auto& st = m_channels[ch];
+        auto& st = m_channels[chIndex(ch)];
         int v = st.ssgEnv.value;
         switch (st.ssgEnv.phase) {
         case 1: // ATTACK: envelope += AR, 255でDECAYへ
@@ -2647,18 +2654,18 @@ private:
         if (!m_engine) return;
         // MUCOM88互換: ミキサーは触らない（トーンは有効のまま）
         // 音量を0にするだけで消音（MUCOM88ではソフトウェアエンベロープのRELEASE状態）
-        m_engine->writeReg(0, REG_SSG_AMP_A + si, 0x00);
+        m_engine->writeReg(0, reg8(REG_SSG_AMP_A + si), 0x00);
     }
 
     void ssgSetVolume(int si, int vol)
     {
         if (!m_engine) return;
         int mmlCh = si + 3;
-        if (m_channels[mmlCh].noteOn) {
+        if (m_channels[chIndex(mmlCh)].noteOn) {
             int v = std::clamp(vol - m_globalAtt / 4, 0, 15);
             uint8_t ampReg = static_cast<uint8_t>(v & 0x0F);
-            if (m_channels[mmlCh].ssgEnv.mode) ampReg |= 0x10;
-            m_engine->writeReg(0, REG_SSG_AMP_A + si, ampReg);
+            if (m_channels[chIndex(mmlCh)].ssgEnv.mode) ampReg |= 0x10;
+            m_engine->writeReg(0, reg8(REG_SSG_AMP_A + si), ampReg);
         }
     }
 
@@ -2667,7 +2674,7 @@ private:
         int mmlCh = si + 3;
         int idx = presetNo & 0x0F;
         if (idx >= 16) idx = 0;
-        auto& st = m_channels[mmlCh];
+        auto& st = m_channels[chIndex(mmlCh)];
         const auto& preset = kSsgPresets[idx];
 
         // エンベロープ
@@ -2728,16 +2735,16 @@ public:
         for (int i = 0; i < MAX_PCM_VOICES; i++) {
             const uint8_t* ent = data + i * 32;
             if (ent[0] == 0) {
-                m_pcmTable[i] = PcmVoiceEntry{};
+                m_pcmTable[chIndex(i)] = PcmVoiceEntry{};
                 continue;
             }
-            uint16_t startAddr = ent[28] | (ent[29] << 8);
-            uint16_t length    = ent[30] | (ent[31] << 8);
-            uint16_t param     = ent[26] | (ent[27] << 8);
+            uint16_t startAddr = word16(ent[28] | (ent[29] << 8));
+            uint16_t length    = word16(ent[30] | (ent[31] << 8));
+            uint16_t param     = word16(ent[26] | (ent[27] << 8));
             uint16_t endAddr   = startAddr + (length >> 2);  // mucomvm.cpp互換
-            m_pcmTable[i].startAddr = startAddr;
-            m_pcmTable[i].endAddr   = endAddr;
-            m_pcmTable[i].param     = param;
+            m_pcmTable[chIndex(i)].startAddr = startAddr;
+            m_pcmTable[chIndex(i)].endAddr   = endAddr;
+            m_pcmTable[chIndex(i)].param     = param;
         }
 
         // PCMデータのfmgenバッファへのロードは呼び出し側で行う
@@ -2769,7 +2776,7 @@ public:
         size_t sz = static_cast<size_t>(ifs.tellg());
         ifs.seekg(0);
         std::vector<uint8_t> buf(sz);
-        ifs.read(reinterpret_cast<char*>(buf.data()), sz);
+        ifs.read(reinterpret_cast<char*>(buf.data()), streamSize(sz));
         return loadPcmBinary(buf.data(), sz);
     }
 
@@ -2797,7 +2804,7 @@ private:
         // Z80 PCMGFQ(music.asm:584-603): base delta-N(PCMNMB[semi]) に D命令デチューン
         // (IX+9/10) を ADD HL,DE で加算してから ASUB7 で octave 右シフトする
         // → 実効 = (PCMNMB + detune) >> shift。Kトラックの D 命令再現 (#71)。
-        int32_t dn = static_cast<int32_t>(PCMNMB[semi]) + m_channels[10].detune;
+        int32_t dn = static_cast<int32_t>(PCMNMB[chIndex(semi)]) + m_channels[chIndex(10)].detune;
         if (dn < 0) dn = 0;
         if (shift > 0) dn >>= shift;
         return static_cast<uint16_t>(static_cast<uint32_t>(dn) & 0xFFFF);
@@ -2819,10 +2826,10 @@ private:
         int idx = m_pcmCurrentNum - 1;  // Z80: DEC A (1-based → 0-based)
         if (idx < 0 || idx >= m_pcmVoiceCount) idx = 0;
         PcmVoiceEntry defaultPcm{};
-        auto& pcm = m_pcmLoaded ? m_pcmTable[idx] : defaultPcm;
+        auto& pcm = m_pcmLoaded ? m_pcmTable[chIndex(idx)] : defaultPcm;
 
         uint16_t deltaN = adpcmbNoteToDeltaN(noteNum);
-        int finalVol = adpcmbEffectiveVolume(m_channels[10].volume);
+        int finalVol = adpcmbEffectiveVolume(m_channels[chIndex(10)].volume);
 
         // Z80 PLAY register sequence (port 1)
         m_engine->writeReg(1, 0x0B, 0x00);              // mute
@@ -2867,7 +2874,7 @@ private:
         for (int oi = 0; oi < 4; oi++) {
             int so = carrierOffsets[al & 7][oi];
             if (so < 0) break;
-            engine->writeReg(port, 0x40 + so + off, static_cast<uint8_t>(std::clamp(tl, 0, 127)));
+            engine->writeReg(port, reg8(0x40 + so + off), static_cast<uint8_t>(std::clamp(tl, 0, 127)));
         }
     }
 
@@ -2875,15 +2882,15 @@ private:
     int seAllocSlot()
     {
         for (int i = 0; i < MAX_SE_SLOTS; i++) {
-            if (!m_seSlots[i].active) return i;
+            if (!m_seSlots[seIndex(i)].active) return i;
         }
         // 全スロット使用中 → 最古を奪う
         int oldest = 0;
         uint32_t oldestOrder = m_seSlots[0].allocOrder;
         for (int i = 1; i < MAX_SE_SLOTS; i++) {
-            if (m_seSlots[i].allocOrder < oldestOrder) {
+            if (m_seSlots[seIndex(i)].allocOrder < oldestOrder) {
                 oldest = i;
-                oldestOrder = m_seSlots[i].allocOrder;
+                oldestOrder = m_seSlots[seIndex(i)].allocOrder;
             }
         }
         stopSe(oldest);
@@ -2908,7 +2915,7 @@ private:
     {
         int slotIdx = (slotHint >= 0 && slotHint < MAX_SE_SLOTS)
                     ? slotHint : seAllocSlot();
-        if (m_seSlots[slotIdx].active) stopSe(slotIdx);
+        if (m_seSlots[seIndex(slotIdx)].active) stopSe(slotIdx);
 
         // BGM FMチャンネル選択（J,I,H,C,B,A優先、ノートオフ中を優先）
         static const int fmChOrder[] = {9, 8, 7, 2, 1, 0};
@@ -2920,7 +2927,7 @@ private:
                 if (s.active && s.mmlCh == ch) { usedBySe = true; break; }
             }
             if (usedBySe) continue;
-            if (!m_channels[ch].noteOn) { bestCh = ch; break; }
+            if (!m_channels[chIndex(ch)].noteOn) { bestCh = ch; break; }
             if (bestCh < 0) bestCh = ch;
         }
         if (bestCh < 0) return -1;
@@ -2929,7 +2936,7 @@ private:
         int fi = toFMIndex(bestCh);
         seApplyAndKeyOn(m_engine, fi, patch, noteNum, velocity);
 
-        auto& slot = m_seSlots[slotIdx];
+        auto& slot = m_seSlots[seIndex(slotIdx)];
         slot.active = true;
         slot.allocOrder = m_seAllocCounter++;
         slot.fmIndex = fi;
@@ -2951,7 +2958,7 @@ private:
                     ? slotHint : seAllocSlot();
         int fi = slotIdx;  // Rich: スロット番号 = FMインデックス（1:1対応）
 
-        auto& slot = m_seSlots[slotIdx];
+        auto& slot = m_seSlots[seIndex(slotIdx)];
         if (slot.active) m_seEngine->fmKeyOff(slot.fmIndex);
 
         seApplyAndKeyOn(m_seEngine, fi, patch, noteNum, velocity);
@@ -2972,12 +2979,12 @@ private:
     void seTickDuration(uint32_t frameCount) noexcept
     {
         for (int i = 0; i < MAX_SE_SLOTS; i++) {
-            auto& slot = m_seSlots[i];
+            auto& slot = m_seSlots[seIndex(i)];
             if (!slot.active || slot.durationSamples == 0) continue;
 
             // ピッチスイープ: 現在ノートのendNote != -1 の場合、毎フレーム補間
             if (slot.isSequence) {
-                const auto& curNote = slot.seqNotes[slot.seqCurrentNote];
+                const auto& curNote = slot.seqNotes[seIndex(slot.seqCurrentNote)];
                 if (curNote.endNote >= 0 && slot.durationSamples > 0) {
                     // 進行率: 0.0（開始）→ 1.0（終了）
                     float progress = 1.0f - static_cast<float>(slot.samplesLeft) / static_cast<float>(slot.durationSamples);
@@ -2995,7 +3002,7 @@ private:
                 // シーケンス再生: 次のノートへ遷移
                 if (slot.isSequence && slot.seqCurrentNote + 1 < slot.seqNoteCount) {
                     slot.seqCurrentNote++;
-                    const auto& nextNote = slot.seqNotes[slot.seqCurrentNote];
+                    const auto& nextNote = slot.seqNotes[seIndex(slot.seqCurrentNote)];
                     // 新しいノートのdurationを設定
                     slot.durationSamples = static_cast<uint32_t>(static_cast<uint64_t>(nextNote.durationMs) * m_sampleRate / 1000);
                     slot.samplesLeft = slot.durationSamples;
@@ -3019,7 +3026,7 @@ private:
     void seRecalcVolume()
     {
         for (int i = 0; i < MAX_SE_SLOTS; i++) {
-            auto& slot = m_seSlots[i];
+            auto& slot = m_seSlots[seIndex(i)];
             if (!slot.active) continue;
             int tlBase = fmvdatLookup(slot.velocity);
             int tl = std::clamp(tlBase + m_masterAtt + m_seAtt, 0, 127);
@@ -3050,7 +3057,7 @@ private:
         // yコマンドやpコマンドで設定された値をそのまま使用
         for (int i = 0; i < 6; i++) {
             if (m_rhythmMask & (1 << i)) {
-                m_engine->writeReg(0, 0x18 + i, m_rhythmIL[i]);
+                m_engine->writeReg(0, reg8(0x18 + i), m_rhythmIL[chIndex(i)]);
             }
         }
         // 全体音量TL（MUCOM88互換: vコマンドの全体音量値を毎回書き込み）
