@@ -40,6 +40,10 @@ if(LIBMUCOM88_BUILD_TESTS)
     target_link_libraries(logical_stem_mixer PRIVATE mucom88::mucom88)
     add_test(NAME logical_stem_mixer COMMAND logical_stem_mixer)
 
+    add_executable(post_chip_processor tests/post_chip_processor.cpp)
+    target_link_libraries(post_chip_processor PRIVATE mucom88::mucom88)
+    add_test(NAME post_chip_processor COMMAND post_chip_processor)
+
     add_executable(regression_metrics tests/regression_metrics.cpp)
     target_link_libraries(regression_metrics PRIVATE mucom88::mucom88)
     add_test(NAME regression_metrics COMMAND regression_metrics)
