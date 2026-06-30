@@ -46,9 +46,12 @@ public:
     {
         m_boardLpfL.reset();
         m_boardLpfR.reset();
+        m_boardLpfMono.reset();
         for (auto& f : m_cabinetL)
             f.reset();
         for (auto& f : m_cabinetR)
+            f.reset();
+        for (auto& f : m_cabinetMono)
             f.reset();
         m_noiseState = kInitialNoiseState;
     }
@@ -282,15 +285,20 @@ private:
         const double sr = m_config.sampleRate > 0.0 ? m_config.sampleRate : kDefaultSampleRate;
         m_boardLpfL.setLowPass(sr, m_config.lpfCutoffHz, kButterworthQ);
         m_boardLpfR.setLowPass(sr, m_config.lpfCutoffHz, kButterworthQ);
+        m_boardLpfMono.setLowPass(sr, m_config.lpfCutoffHz, kButterworthQ);
 
         m_cabinetL[0].setHighPass(sr, 350.0, kButterworthQ);
         m_cabinetR[0].setHighPass(sr, 350.0, kButterworthQ);
+        m_cabinetMono[0].setHighPass(sr, 350.0, kButterworthQ);
         m_cabinetL[1].setPeaking(sr, 1100.0, 0.9, 4.0);
         m_cabinetR[1].setPeaking(sr, 1100.0, 0.9, 4.0);
+        m_cabinetMono[1].setPeaking(sr, 1100.0, 0.9, 4.0);
         m_cabinetL[2].setPeaking(sr, 3200.0, 0.9, -2.0);
         m_cabinetR[2].setPeaking(sr, 3200.0, 0.9, -2.0);
+        m_cabinetMono[2].setPeaking(sr, 3200.0, 0.9, -2.0);
         m_cabinetL[3].setLowPass(sr, 7000.0, kButterworthQ);
         m_cabinetR[3].setLowPass(sr, 7000.0, kButterworthQ);
+        m_cabinetMono[3].setLowPass(sr, 7000.0, kButterworthQ);
         m_noiseGain = std::pow(10.0, m_config.noiseLevelDbfs / 20.0);
     }
 
@@ -298,10 +306,14 @@ private:
     {
         if (m_config.dacModel)
             y = ym3016RoundTrip(y, m_config.dacBits);
+        if (m_config.antiAlias)
+            y = m_boardLpfMono.process(y);
         if (m_config.saturation)
             y = softClip(y, m_config.saturationDrive);
         if (m_config.noiseFloor)
             y += nextNoise() * m_noiseGain;
+        if (m_config.cabinet && m_config.cabinetAmount > 0.0)
+            y = processCabinet(y, m_cabinetMono);
         y = std::clamp(y, -1.0, 1.0);
     }
 
@@ -348,8 +360,10 @@ private:
     PostChipConfig m_config {};
     Biquad m_boardLpfL {};
     Biquad m_boardLpfR {};
+    Biquad m_boardLpfMono {};
     Biquad m_cabinetL[4] {};
     Biquad m_cabinetR[4] {};
+    Biquad m_cabinetMono[4] {};
     uint32_t m_noiseState = kInitialNoiseState;
     double m_noiseGain = 0.0;
 };
