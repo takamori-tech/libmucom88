@@ -9,6 +9,9 @@ Header-only C++17. The core has no external dependencies. The optional ymfm adap
 CMake の `INTERFACE` ターゲットとして組み込み可能で、単体ビルドでは付属ツールとヘッダースモークテストもビルドできる。  
 Can be consumed as a CMake `INTERFACE` target, and the standalone build also builds the bundled tool and header smoke test.
 
+`mucom88/regression_metrics.hpp` と `mucom88/test_muc_data.hpp` は、mucom88v / CLAUDIUS などの consumer が同じ MUC コーパスと A/B 回帰判定を再利用するための共有テスト基盤。
+`mucom88/regression_metrics.hpp` and `mucom88/test_muc_data.hpp` provide shared MUC corpus and A/B regression helpers for consumers such as mucom88v and CLAUDIUS.
+
 ## 概要 / Overview
 
 [MUCOM88](https://www.ancient.co.jp/~mucom88/)（古代祐三氏がNEC PC-8801向けに開発した音楽ドライバー）と互換のMMLパーサー＋シーケンサーを提供する。MMLテキストからYM2608のレジスタ書き込みを生成し、任意のYM2608エミュレータ（fmgen等）をバックエンドとして使用できる。  

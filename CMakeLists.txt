@@ -40,6 +40,10 @@ if(LIBMUCOM88_BUILD_TESTS)
     target_link_libraries(logical_stem_mixer PRIVATE mucom88::mucom88)
     add_test(NAME logical_stem_mixer COMMAND logical_stem_mixer)
 
+    add_executable(regression_metrics tests/regression_metrics.cpp)
+    target_link_libraries(regression_metrics PRIVATE mucom88::mucom88)
+    add_test(NAME regression_metrics COMMAND regression_metrics)
+
     if(TARGET drumkit_gen)
         add_executable(drumkit_gen_wavparse tests/drumkit_gen_wavparse.cpp)
         add_test(NAME drumkit_gen_wavparse COMMAND drumkit_gen_wavparse $<TARGET_FILE:drumkit_gen>)
