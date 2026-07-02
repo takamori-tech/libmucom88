@@ -1574,7 +1574,15 @@ private:
         int endNote = -1;
         if (pos < mml.size() && mml[pos] != '}') {
             static const int noteOffsets[] = { 9, 11, 0, 2, 4, 5, 7 }; // a-g
-            char nc = toLower(mml[pos]);
+            // Z80 STP22互換: 終了音直前の '<'/'>' はOCTAVEを直接更新し、{}後にも残る。
+            if (mml[pos] == '<') {
+                pos++;
+                st.octave = std::max(1, st.octave - 1);
+            } else if (mml[pos] == '>') {
+                pos++;
+                st.octave = std::min(8, st.octave + 1);
+            }
+            char nc = (pos < mml.size()) ? toLower(mml[pos]) : '\0';
             if (nc >= 'a' && nc <= 'g') {
                 int semi = noteOffsets[nc - 'a'];
                 pos++;

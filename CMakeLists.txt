@@ -36,6 +36,10 @@ if(LIBMUCOM88_BUILD_TESTS)
     target_link_libraries(mml_render_mixed_limit PRIVATE mucom88::mucom88)
     add_test(NAME mml_render_mixed_limit COMMAND mml_render_mixed_limit)
 
+    add_executable(mml_portamento_octave tests/mml_portamento_octave.cpp)
+    target_link_libraries(mml_portamento_octave PRIVATE mucom88::mucom88)
+    add_test(NAME mml_portamento_octave COMMAND mml_portamento_octave)
+
     add_executable(logical_stem_mixer tests/logical_stem_mixer.cpp)
     target_link_libraries(logical_stem_mixer PRIVATE mucom88::mucom88)
     add_test(NAME logical_stem_mixer COMMAND logical_stem_mixer)
