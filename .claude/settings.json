@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\\.(cpp|hpp|h|c)\"' 2>/dev/null; then echo 'C++ヘッダー変更検出 — mucom88v側でビルド確認を推奨: cd ~/git-projects/mucom88v && cmake --build build -- -j8 2>&1 | grep error:' >&2; fi",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\\.(cpp|hpp|h|c)\"' 2>/dev/null; then echo 'C++変更: CLAUDE.md の単体CMake/CTestと必要なconsumer検証を実施。mucom88vでは ./scripts/build_release_artifacts.sh 完了後にStandalone日時を確認。' >&2; fi",
             "timeout": 3000
           }
         ]

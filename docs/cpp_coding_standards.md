@@ -7,7 +7,7 @@ mucom88v 版からその点を翻案している。CLAUDE.md の「C++コーデ�
 
 ## ヘッダオンリー設計の維持
 
-- `.cpp` を追加しない。全実装を `include/mucom88/*.hpp` に置く（`#pragma once`、include guard 不可）
+- コアに `.cpp` を追加しない。コア実装を `include/mucom88/*.hpp` に置く。tests/toolsの `.cpp` は対象外（`#pragma once`、include guard 不可）
 - `fm_common.hpp` は mucom88v・CLAUDIUS と共有するため、シグネチャ・enum 値・構造体レイアウト・
   デフォルト引数の破壊的変更は後方互換性を壊す。変更時は両利用側のビルドへの影響を確認する
 - 単体検証: `g++ -std=c++17 -Wall -Wextra -I include test.cpp`（警告ゼロ）
@@ -24,9 +24,11 @@ mucom88v 版からその点を翻案している。CLAUDE.md の「C++コーデ�
 - `advance()`, `renderMixed()`, `generateInterleaved()` 等は `noexcept` 必須（F.6）
 - オーディオパス内でメモリ確保（`new` / `vector::push_back`）・mutex lock 禁止（Per.15, CP.43）
 - 例外は使用しない方針（エラーは `bool` 戻り値または `std::optional` で返す）。
-  リアルタイムスレッドでの例外伝播は未定義動作として扱う
+  `noexcept`境界を例外が越えると `std::terminate` が呼ばれる。
+  根拠: [C++ draft except.terminate](https://eel.is/c++draft/except.terminate)。
 - MmlEngine はスレッドセーフでない。`advance()` と `playVoice()`/`playSe()` は同一オーディオ
-  スレッドから呼ぶ契約。UI スレッドからの状態取得（`chNoteOn()` 等）は非アトミックだが表示用途では許容
+  スレッドから呼ぶ契約。UIの表示用途でも非atomic値の競合する読み書きを無条件に許容しない。
+  共有状態の同期・寿命をconsumer側で保証する。根拠: [C++ draft intro.races](https://eel.is/c++draft/intro.races)。
 
 ## キャスト規約
 
@@ -44,20 +46,12 @@ mucom88v 版からその点を翻案している。CLAUDE.md の「C++コーデ�
 - `<algorithm>` / `std::clamp` を活用
 - `auto` は型が明白な場合のみ使用
 
-## 検証フロー（テストは利用側）
+## 検証フロー
 
-本リポジトリ単体にはテストが無い。回帰検証は mucom88v の tools/ で行う:
-
-```bash
-# 1. ヘッダ単体検証（このリポジトリ）
-g++ -std=c++17 -Wall -Wextra -I include test.cpp
-
-# 2. 回帰テスト（mucom88v 側、全曲 avgRMS >= 0.8 必須）
-cd ~/git-projects/mucom88v
-cmake --build build -- -j8
-build/muc_regtest -sec 30
-build/muc_compare input.muc
-```
+単体テストは `tests/` と `CMakeLists.txt` にある。単体CMake/CTest、optional ymfmの
+compile/link、consumer全曲回帰のコマンドと適用範囲は [CLAUDE.md](../CLAUDE.md)「テスト」を正本とする。
+文書のみは差分・参照整合性を確認し、ビルド/回帰をskipと記録する。
+API/MML変更では対応docsも更新する。単体PASSからconsumerや実音のPASSを推定しない。
 
 ## 情報源
 
