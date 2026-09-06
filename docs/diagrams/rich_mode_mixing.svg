@@ -1,87 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 340" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
-  <defs>
-    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
-      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.08"/>
-    </filter>
-    <marker id="arr" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="5" orient="auto-start-reverse">
-      <path d="M0,0 L10,3 L0,6 Z" fill="#455A64"/>
-    </marker>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 410" font-family="sans-serif">
+  <title>renderMixed()：RichモードのPCM合算</title>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#526579"/></marker></defs>
+  <rect width="780" height="410" rx="10" fill="#f8fafc"/>
+  <text x="390" y="35" text-anchor="middle" font-size="21" font-weight="700" fill="#16324f">renderMixed()：RichモードのPCM合算</text>
+  <rect x="35" y="80" width="190" height="85" rx="8" fill="#dcfce7" stroke="#94a3b8"/>
+  <text x="130.0" y="105" text-anchor="middle" font-size="16" fill="#16324f">BGMチップ</text>
+  <text x="130.0" y="127" text-anchor="middle" font-size="12" fill="#334155">BGM + ADPCM-Bボイス</text>
+  <text x="130.0" y="147" text-anchor="middle" font-size="12" fill="#334155">int16 PCM</text>
+  <path d="M225 122 L270 122" fill="none" stroke="#526579" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="275" y="80" width="190" height="85" rx="8" fill="#dcfce7" stroke="#94a3b8"/>
+  <text x="370.0" y="105" text-anchor="middle" font-size="16" fill="#16324f">× outputGain</text>
+  <text x="370.0" y="127" text-anchor="middle" font-size="12" fill="#334155">Tuned：fmgen 1.0</text>
+  <text x="370.0" y="147" text-anchor="middle" font-size="12" fill="#334155">ymfm 約1.3335</text>
+  <rect x="35" y="220" width="190" height="65" rx="8" fill="#ffedd5" stroke="#94a3b8"/>
+  <text x="130.0" y="245" text-anchor="middle" font-size="16" fill="#16324f">SE専用チップ</text>
+  <text x="130.0" y="267" text-anchor="middle" font-size="12" fill="#334155">int16 PCM</text>
+  <path d="M225 252 L270 252" fill="none" stroke="#526579" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="275" y="220" width="190" height="65" rx="8" fill="#ffedd5" stroke="#94a3b8"/>
+  <text x="370.0" y="245" text-anchor="middle" font-size="16" fill="#16324f">× 1.0</text>
+  <text x="370.0" y="267" text-anchor="middle" font-size="12" fill="#334155">SE音量はレジスタで調整</text>
+  <path d="M465 122 L518 174" fill="none" stroke="#526579" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M465 252 L518 195" fill="none" stroke="#526579" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="525" y="150" width="220" height="75" rx="8" fill="#e0f2fe" stroke="#94a3b8"/>
+  <text x="635.0" y="175" text-anchor="middle" font-size="16" fill="#16324f">加算 → softLimit16()</text>
+  <text x="635.0" y="197" text-anchor="middle" font-size="12" fill="#334155">int16ステレオ出力</text>
+  <text x="390" y="330" text-anchor="middle" font-size="15" fill="#334155">Rich：BGM × outputGain + SE → ソフトリミッター</text>
+  <text x="390" y="356" text-anchor="middle" font-size="13" fill="#334155">Classic：gain = 1 はコピー、gain ≠ 1 は倍率適用＋ソフトリミッター</text>
+  <text x="390" y="382" text-anchor="middle" font-size="13" fill="#334155">各チップ内部の出力処理は、この合算より前に行われます。</text>
 
-  <!-- Background -->
-  <rect width="620" height="340" fill="#FAFBFC" rx="6"/>
-
-  <!-- Title -->
-  <text x="310" y="26" text-anchor="middle" font-size="14" font-weight="600" fill="#263238" letter-spacing="0.5">Rich Mode: renderMixed() Signal Flow</text>
-  <line x1="160" y1="35" x2="460" y2="35" stroke="#CFD8DC" stroke-width="0.5"/>
-
-  <!-- ==================== BGM Path ==================== -->
-  <!-- BGM Chip -->
-  <g filter="url(#shadow)">
-    <rect x="30" y="60" width="140" height="60" rx="8" fill="#E8F5E9" stroke="#A5D6A7" stroke-width="1.5"/>
-  </g>
-  <text x="100" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#1B5E20">BGM Chip</text>
-  <text x="100" y="96" text-anchor="middle" font-size="8.5" fill="#2E7D32">m_engine (YM2608)</text>
-  <text x="100" y="108" text-anchor="middle" font-size="8" fill="#78909C">FM6ch + SSG3ch + Rhythm + ADPCM-B</text>
-
-  <!-- Arrow BGM → Gain -->
-  <line x1="170" y1="90" x2="225" y2="90" stroke="#2E7D32" stroke-width="1.5" marker-end="url(#arr)"/>
-  <text x="197" y="84" text-anchor="middle" font-size="7.5" fill="#78909C">int16 PCM</text>
-
-  <!-- Output Gain (BGM only) -->
-  <g filter="url(#shadow)">
-    <rect x="230" y="68" width="120" height="44" rx="8" fill="#C8E6C9" stroke="#66BB6A" stroke-width="1.5"/>
-  </g>
-  <text x="290" y="86" text-anchor="middle" font-size="10" font-weight="700" fill="#1B5E20">x outputGain</text>
-  <text x="290" y="100" text-anchor="middle" font-size="8" fill="#2E7D32">(default 2.0)</text>
-
-  <!-- Arrow Gain → Mix -->
-  <line x1="350" y1="90" x2="410" y2="160" stroke="#2E7D32" stroke-width="1.5" marker-end="url(#arr)"/>
-
-  <!-- ==================== SE Path ==================== -->
-  <!-- SE Chip -->
-  <g filter="url(#shadow)">
-    <rect x="30" y="180" width="140" height="60" rx="8" fill="#FBE9E7" stroke="#FFAB91" stroke-width="1.5"/>
-  </g>
-  <text x="100" y="202" text-anchor="middle" font-size="11" font-weight="700" fill="#BF360C">SE Chip</text>
-  <text x="100" y="216" text-anchor="middle" font-size="8.5" fill="#D84315">m_seEngine (YM2608)</text>
-  <text x="100" y="228" text-anchor="middle" font-size="8" fill="#78909C">FM6ch (SE slots 0-5)</text>
-
-  <!-- Unity gain label -->
-  <g filter="url(#shadow)">
-    <rect x="230" y="188" width="120" height="44" rx="8" fill="#FFCCBC" stroke="#FF8A65" stroke-width="1.5"/>
-  </g>
-  <text x="290" y="206" text-anchor="middle" font-size="10" font-weight="700" fill="#BF360C">x 1.0 (unity)</text>
-  <text x="290" y="220" text-anchor="middle" font-size="8" fill="#D84315">gain not applied</text>
-
-  <!-- Arrow SE → Unity → Mix -->
-  <line x1="170" y1="210" x2="225" y2="210" stroke="#D84315" stroke-width="1.5" marker-end="url(#arr)"/>
-  <text x="197" y="204" text-anchor="middle" font-size="7.5" fill="#78909C">int16 PCM</text>
-  <line x1="350" y1="210" x2="410" y2="170" stroke="#D84315" stroke-width="1.5" marker-end="url(#arr)"/>
-
-  <!-- ==================== Mix ==================== -->
-  <g filter="url(#shadow)">
-    <rect x="415" y="140" width="60" height="50" rx="25" fill="#ECEFF1" stroke="#90A4AE" stroke-width="2"/>
-  </g>
-  <text x="445" y="170" text-anchor="middle" font-size="18" font-weight="700" fill="#455A64">+</text>
-
-  <!-- Arrow Mix → Output -->
-  <line x1="475" y1="165" x2="510" y2="165" stroke="#455A64" stroke-width="1.5" marker-end="url(#arr)"/>
-
-  <!-- Clamp -->
-  <g filter="url(#shadow)">
-    <rect x="515" y="143" width="80" height="44" rx="8" fill="#E0E0E0" stroke="#9E9E9E" stroke-width="1.2"/>
-  </g>
-  <text x="555" y="162" text-anchor="middle" font-size="9" font-weight="600" fill="#37474F">clamp</text>
-  <text x="555" y="175" text-anchor="middle" font-size="8" fill="#78909C">-32768..32767</text>
-
-  <!-- ==================== Rationale ==================== -->
-  <g filter="url(#shadow)">
-    <rect x="30" y="270" width="560" height="50" rx="6" fill="#FFF8E1" stroke="#FFE082" stroke-width="1"/>
-  </g>
-  <text x="310" y="290" text-anchor="middle" font-size="9" font-weight="600" fill="#F57F17">Why BGM-only gain?</text>
-  <text x="310" y="306" text-anchor="middle" font-size="8.5" fill="#795548">fmgen outputs ~25% of int16 range. outputGain=2.0 compensates to ~50%.</text>
-  <text x="310" y="316" text-anchor="middle" font-size="8.5" fill="#795548">Applying gain to both chips before mixing would exceed int16 on peaks, causing clipping distortion.</text>
-
-  <text x="600" y="335" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
 </svg>

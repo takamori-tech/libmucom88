@@ -1,63 +1,62 @@
-# C++ コーディング規約 (libmucom88)
+# C++ コーディング規約
 
-CLAUDIUS / MUCOM88V プロジェクトと共通の C++ ベストプラクティス。
-C++ Core Guidelines / Google C++ Style Guide / CERT C++ Secure Coding Standard 準拠。
-本リポジトリは**ヘッダオンリー C++17・外部依存なし・例外不使用**という制約を持つため、
-mucom88v 版からその点を翻案している。CLAUDE.md の「C++コーディングベストプラクティス」節の詳細版。
+libmucom88の新規・変更コードに適用する規約です。
+現行コードがすべての項目を満たすという保証ではありません。検証の正本は [開発規約](../CLAUDE.md#テスト) です。
 
-## ヘッダオンリー設計の維持
+## ヘッダーと互換性
 
-- コアに `.cpp` を追加しない。コア実装を `include/mucom88/*.hpp` に置く。tests/toolsの `.cpp` は対象外（`#pragma once`、include guard 不可）
-- `fm_common.hpp` は mucom88v・CLAUDIUS と共有するため、シグネチャ・enum 値・構造体レイアウト・
-  デフォルト引数の破壊的変更は後方互換性を壊す。変更時は両利用側のビルドへの影響を確認する
-- 単体検証は [CLAUDE.md](../CLAUDE.md)「テスト」のCMake/CTestを使う。
+- C++17を使用し、コア実装は `include/mucom88/*.hpp` に置く。コア用の.cppを追加しない。
+  `tests/` と `tools/` の.cpp、optional adapterが必要とする外部実装は別です。
+- ヘッダーは `#pragma once` を使い、必要な標準ヘッダーを直接includeする。
+- ヘッダー内の定義はODRを満たす形にする。複数翻訳単位から使う場合も検証する。
+- コアへエミュレータ依存を持ち込まない。ymfm依存は任意ヘッダーの境界に置く。
+- 公開シグネチャ、enum値、型のレイアウト、既定値、戻り値の意味を変更する場合は、
+  [移行方針](api_cleanup.md#今後のapi変更) と利用側への影響を確認する。
 
-## 静的解析
+## 実時間性と同期
 
-- `.clang-tidy` でチェック: `bugprone-*`, `cppcoreguidelines-*`, `performance-*`
-- エラー昇格: `bugprone-use-after-move`, `bugprone-narrowing-conversions`
-- 対象は `include/mucom88/` のヘッダ群
-- `.clang-format`: IndentWidth=4, K&R(Attach), ColumnLimit=120, SortIncludes=Never
+- `advance()`、`renderMixed()`、`generateInterleaved()` 等の音声経路は `noexcept` を維持する。
+- 新規・変更する音声経路に確保・解放、ファイルI/O、throw、待機するmutexを持ち込まない。
+  データ準備・解析・イベント交換は音声コールバック外で行う。
+- 既存の付属ymfmアダプタにはmutexとボイスRAM再代入がある。
+  この制約を見落としてライブラリ全体をロックなし・確保なしと説明しない。
+- `MmlEngine` の操作・getter・バックエンドとのアクセスを直列化する。
+  UI用の値は所有スレッドでスナップショットを作り、利用側が安全に受け渡す。
+- 非所有ポインタやバッファは、最後の利用まで生存させる。ムーブや `const`、一部のatomicだけで
+  所有権・全体の同期を保証したと判断しない。
 
-## リアルタイムオーディオ安全性
+データ競合の扱いは [C++ draft: intro.races](https://eel.is/c++draft/intro.races) を参照。
+表示用途であることは、通常変数への競合読み書きを許容する理由になりません。
 
-- `advance()`, `renderMixed()`, `generateInterleaved()` 等は `noexcept` 必須（F.6）
-- オーディオパス内でメモリ確保（`new` / `vector::push_back`）・mutex lock 禁止（Per.15, CP.43）
-- 例外は使用しない方針（エラーは `bool` 戻り値または `std::optional` で返す）。
-  `noexcept`境界を例外が越えると `std::terminate` が呼ばれる。
-  根拠: [C++ draft except.terminate](https://eel.is/c++draft/except.terminate)。
-- MmlEngine はスレッドセーフでない。`advance()` と `playVoice()`/`playSe()` は同一オーディオ
-  スレッドから呼ぶ契約。UIの表示用途でも非atomic値の競合する読み書きを無条件に許容しない。
-  共有状態の同期・寿命をconsumer側で保証する。根拠: [C++ draft intro.races](https://eel.is/c++draft/intro.races)。
+## エラー処理と境界
 
-## キャスト規約
+明示的な例外処理をAPIへ導入せず、bool等の戻り値で失敗を表します。
+既存の `parse()` やPCM統合ロードは厳密な成功判定を提供しないため、その限界を文書にも残します。
+標準コンテナ等のメモリ確保が失敗し得ることと、明示的なthrowを使用しない方針は区別します。
+例外が `noexcept` 境界を越えると `std::terminate` が呼ばれます。
+根拠: [C++ draft: except.terminate](https://eel.is/c++draft/except.terminate)。
 
-- 新規コードでは `static_cast<>` を使用、C-style cast `(type)` 禁止（ES.48）
-- `reinterpret_cast` は PCM バッファ / レジスタ操作等で必要な場合のみ許容
+外部入力のポインタ、容量、整数演算、添字、有限の数値、展開量を確認します。
+Releaseで無効になるassertだけで安全性を担保しません。
+処理時間やメモリの上限を主張する場合は、入力全体から到達経路を追って検証します。
 
-## 乱数
+## 記法
 
-- `rand()` / `srand()` 禁止 → `std::mt19937` + `<random>`（CERT MSC50-CPP）
+- 説明・コメントは日本語。意図、単位、呼び出し条件を具体的に記す。
+- 新規コードの数値変換は `static_cast<>`。C形式のキャストを追加しない。
+  `reinterpret_cast` はバイト表現等で必要な箇所に限定する。
+- `std::clamp` など標準のアルゴリズムを使い、範囲と符号を明確にする。
+- `auto` は型が明らかな場合、構造化束縛は要素の意味が読みやすくなる場合に使う。
+- 読み取り専用文字列の新規APIでは `std::string_view` を検討し、参照先の寿命を明確にする。
+- 新規コードで `rand()` / `srand()` を使わない。汎用乱数には `std::mt19937` 等の `<random>` を使う。
+  DSP等の決定論的な状態を持つ処理は、再現性・用途・音声経路の制約を確認する。
 
-## モダン C++ スタイル
+## フォーマットと静的解析
 
-- 構造化束縛の積極使用（`for (auto& [key, val] : map)`）
-- 読み取り専用文字列パラメータは新規 API で `std::string_view` 推奨（LLVM Coding Standards）
-- `<algorithm>` / `std::clamp` を活用
-- `auto` は型が明白な場合のみ使用
+[.clang-format](../.clang-format) は4スペース、Attach形式の中括弧、120列、include順序保持です。
+[.clang-tidy](../.clang-tidy) は `bugprone-*`、`cppcoreguidelines-*`、`performance-*` を基本とし、
+同ファイルで列挙した除外を適用します。
+`bugprone-use-after-move` と `bugprone-narrowing-conversions` はエラー扱いです。
 
-## 検証フロー
-
-単体テストは `tests/` と `CMakeLists.txt` にある。単体CMake/CTest、optional ymfmの
-compile/link、consumer全曲回帰のコマンドと適用範囲は [CLAUDE.md](../CLAUDE.md)「テスト」を正本とする。
-文書のみは差分・参照整合性を確認し、ビルド/回帰をskipと記録する。
-API/MML変更では対応docsも更新する。単体PASSからconsumerや実音のPASSを推定しない。
-
-## 情報源
-
-- C++ Core Guidelines（Stroustrup & Sutter）
-- Google C++ Style Guide
-- CERT C++ Secure Coding Standard
-- LLVM Coding Standards
-
-*翻案元: mucom88v `docs/dev/cpp_coding_standards.md`（2026-05-27）*
+設定ファイルがあることと、今回の差分へ解析を実行したことは別です。
+実行したツール・コマンドと結果だけを検証済みとして記録します。

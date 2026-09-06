@@ -1,76 +1,85 @@
 # Logical Stem Mixing
 
-`mucom88/logical_stem_mixer.hpp` は、`IChipBackend::mixStemChunk()` が返す
-`ChipStemFrame` を、論理 stem 単位で 64-bit double accumulation する opt-in helper です。
-既存の `MmlEngine` や `IFmEngine` の通常出力には自動接続されません。consumer が明示的に
-include し、`LogicalStemMixOptions::enableDoubleStemSumming = true` を渡した場合だけ使われます。
+`logical_stem_mixer.hpp` は、バックエンドが出すパート別PCMをdoubleで合算し、floatへ変換する補助機能です。
+エミュレータ内部の演算をfloatへ変える機能ではありません。
+通常の `MmlEngine::renderMixed()` / `IFmEngine` 経路へ自動接続されず、利用側が明示的に呼び出します。
 
-![Logical stem mixing](diagrams/logical_stem_mixing.svg)
+![パート別出力の合算](diagrams/logical_stem_mixing.svg)
 
-## Scope
+## 入力と出力
 
-この helper が扱う責務は、backend-output stem の加算と final float frame への変換だけです。
-UI、DAW bus 数、plugin state、ホスト固有の parallel out mapping は consumer 側の責務です。
+入力の `ChipStemFrame` はFM×6、SSG×3、Rhythm、ADPCM-B、全体mainを持つint32のステレオフレームです。
+`IChipBackend::mixStemChunk()` が対応している場合に取得できます。既定実装は `false` で、
+付属 `FmEngineYmfm` は別の `IFmEngine` を実装するため、このAPIを持ちません。
 
-対象 stem は OPNA/OPN で使う `FM1..FM6`, `SSG1..SSG3`, `Rhythm`, `ADPCM-B` です。
-OPNB/OPM は stem coverage と bus mapping を consumer 側で確認してから使う必要があります。
+`LogicalStemAccumulator::addStem()` は**入力mainを使いません**。
+各パートを合算し、出力mainをパート＋fallbackから再構成します。
+`addFallbackStereo()` は分離できない別音源等の全体ステレオを加えるための入口です。
+同じ音源のパートと全体ステレオを両方足すと二重計上になります。
 
-## API shape
+## 1フレームの合算例
 
-主な型は次の通りです。
+この例の2入力は、同じ時刻に対応する別インスタンスのフレームです。
+バックエンドの生成処理とバスへの配線は利用側で実装します。
 
 ```cpp
 #include <mucom88/logical_stem_mixer.hpp>
 
-LogicalStemAccumulator acc;
-acc.addStem(stemFromBackend, fadeGain);
-acc.addFallbackStereo(left, right, fadeGain);
+LogicalStemFloatFrame mixFrame(const ChipStemFrame& first,
+                               const ChipStemFrame& second)
+{
+    LogicalStemAccumulator acc; // 出力フレームごとに初期化。
+    acc.addStem(first);
+    acc.addStem(second, 0.5);
 
-LogicalStemMixOptions options;
-options.enableDoubleStemSumming = true;
-options.outputScale = 1.0 / 32768.0;
-options.masterGain = master;
+    LogicalStemMixOptions options;
+    options.enableDoubleStemSumming = true;
+    options.outputScale = 1.0 / 32768.0;
+    options.masterGain = 1.0;
 
-LogicalStemFloatFrame out;
-if (writeLogicalStemFloatFrame(acc, options, out)) {
-    // out.main / out.fm / out.ssg / out.rhythm / out.adpcmB を consumer が配線する
+    LogicalStemFloatFrame out;
+    if (!writeLogicalStemFloatFrame(acc, options, out))
+        clearLogicalStemFloatFrame(out);
+    return out;
 }
 ```
 
-`enableDoubleStemSumming` の既定値は `false` です。false の場合
-`writeLogicalStemFloatFrame()` は `false` を返し、consumer は従来経路へ戻れます。
+同じaccumulatorを再利用する場合は、次の出力フレームの前に `clear()` します。
+ブロック全体を一つのaccumulatorへ足すと、時間方向に混ぜた値になってしまいます。
 
-## Ordering contract
+`LogicalStemMixOptions::enableDoubleStemSumming` の既定は `false`。
+無効時の `writeLogicalStemFloatFrame()` は `false` を返し、出力を書き換えません。
+前回の出力が自動でゼロになるとは限りません。
 
-libmucom88 は emulator core の内部演算を float 化しません。fmgen/ymfm などの backend は従来どおり
-native な整数系 sample を作ります。`LogicalStemAccumulator` は、その backend boundary の
-`ChipStemFrame` を論理 stem として加算します。
+出力 `LogicalStemFloatFrame` はfloatの `main[2]`, `fm[6][2]`, `ssg[3][2]`,
+`rhythm[2]`, `adpcmB[2]`, `fallback[2]` を持ちます。
+いずれにも `outputScale * masterGain` が掛かります。
 
-Native/Tuned、SSG mix、ADPCM 補正、Rhythm、DAC/Hi-Fi、Soft Limiter 相当の処理は、各 backend が
-`ChipStemFrame` を返す前に既存契約どおり適用する必要があります。この helper はそれらの順序を
-並べ替えません。
+## バックエンドとの接続
 
-## Headroom
+- 対応チップとパート分離範囲を確認する。固定の配列形状だけで全チップの全パートを表せるとは限りません。
+- バックエンドの生成は同じ時刻につき一度だけ行う。stem取得失敗後に通常mixを呼ぶ場合も、
+  失敗した呼び出しでチップ時間が進んでいないか、具体実装の契約を確認します。
+- `mixChunk()` の加算先int32バッファはゼロ初期化する。
+- Native/Tuned、較正、SSGバランス、DACなどの適用位置を揃える。このヘルパーはそれらを適用しません。
 
-同相の信号を足した場合、peak level は `20 * log10(N)` dB 増えます。
+各stemに別々の非線形リミッターを掛けた和と、全体へ一度掛けた結果は一般に一致しません。
+stemの和がバックエンドの `main` と同じになる保証は、このヘルパーにはありません。
 
-| Summed signals | Peak increase |
+## ヘッドルーム
+
+同じ振幅・同じ位相の信号をN個加算すると、ピークは `20 * log10(N)` dB増えます。
+
+| 信号数 | ピーク増加 |
 | ---: | ---: |
-| 2 | +6.0 dB |
-| 4 | +12.0 dB |
-| 8 | +18.1 dB |
-| 11 OPNA logical stems | +20.8 dB |
-| 8 polyphonic instances x 11 stems | +38.9 dB |
+| 2 | +6.0dB |
+| 4 | +12.0dB |
+| 8 | +18.1dB |
+| 11 | +20.8dB |
 
-double accumulator の目的は、内部の stem / polyphonic 合算で早すぎる clip と丸め誤差を避けることです。
-final float は `1.0` を超える値を運べますが、fixed-point 書き出し、DAC、後段 plugin では
-clip し得るため、最終的な level management は consumer 側で行います。
+doubleでの合算は途中の整数クリップや丸めを避けますが、最終音量の調整は行いません。
+出力floatは±1を超え得ます。整数PCM・デバイス出力への変換前に、利用側でレベルを管理します。
+UI、DAWバス、保存状態、最終リミッターは利用側の責務です。
 
-## Soft limiter relationship
-
-Soft limiter は summing precision とは別の nonlinear safety stage です。ymfm などの backend が
-Tuned 互換出力段内で limiter を使う場合、それは `LogicalStemAccumulator` に入る前の
-backend-output stem に反映されます。logical stem mixer は post-master limiter ではありません。
-
-consumer が「double summing 後にも limiter が必要」と判断する場合は、final float frame の後段に
-consumer 固有の処理として追加します。
+実装は [logical_stem_mixer.hpp](../include/mucom88/logical_stem_mixer.hpp)、
+検証例は [logical_stem_mixer.cpp](../tests/logical_stem_mixer.cpp) を参照してください。

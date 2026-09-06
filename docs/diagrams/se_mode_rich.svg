@@ -32,11 +32,11 @@
   <rect x="65" y="59" width="56" height="13" rx="6" fill="#1565C0"/>
   <text x="93" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">BGM</text>
 
-  <!-- Game Code -->
+  <!-- Host Code -->
   <g filter="url(#shadow)">
     <rect x="400" y="55" width="260" height="36" rx="8" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1.2"/>
   </g>
-  <text x="530" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#E65100">Game Code (playSe)</text>
+  <text x="530" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#E65100">Host Code (playSe)</text>
   <rect x="405" y="59" width="56" height="13" rx="6" fill="#E65100"/>
   <text x="433" y="69" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">SE</text>
 

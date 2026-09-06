@@ -45,7 +45,7 @@
   <text x="431" y="66" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">TRANSIENT</text>
   <text x="475" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#0D47A1">Fade</text>
   <text x="475" y="96" text-anchor="middle" font-size="8.5" fill="#1565C0">fadeOut() / fadeIn()</text>
-  <text x="475" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: Yes</text>
+  <text x="475" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop(): state reset</text>
 
   <!-- Layer 4: Ducking -->
   <g filter="url(#shadow)">
@@ -55,7 +55,7 @@
   <text x="616" y="66" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">AUTO</text>
   <text x="660" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#E65100">Ducking</text>
   <text x="660" y="96" text-anchor="middle" font-size="8.5" fill="#F57F17">setDucking(att, sec)</text>
-  <text x="660" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: Yes</text>
+  <text x="660" y="112" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop(): state reset</text>
 
   <!-- ==================== Sum ==================== -->
   <!-- Arrows from 4 layers to sum -->
@@ -145,7 +145,7 @@
   <text x="416" y="376" text-anchor="middle" font-size="6.5" font-weight="600" fill="#FFF">VOICE</text>
   <text x="560" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#6A1B9A">Voice Volume</text>
   <text x="560" y="402" text-anchor="middle" font-size="9" fill="#7B1FA2">setVoiceVolume() + setMasterVolume()</text>
-  <text x="560" y="418" text-anchor="middle" font-size="8.5" fill="#37474F">voiceAtt = masterAtt + voiceAtt    (ADPCM-B vol)</text>
+  <text x="560" y="418" text-anchor="middle" font-size="8.5" fill="#37474F">masterAtt + voiceAtt (applied at voice start)</text>
   <text x="560" y="428" text-anchor="middle" font-size="7.5" fill="#78909C">play()/stop() reset: No</text>
 
   <!-- ==================== Output note ==================== -->
@@ -153,7 +153,7 @@
     <rect x="130" y="458" width="500" height="40" rx="8" fill="#F5F5F5" stroke="#E0E0E0" stroke-width="1"/>
   </g>
   <text x="380" y="476" text-anchor="middle" font-size="9" font-weight="600" fill="#455A64">renderMixed() output</text>
-  <text x="380" y="490" text-anchor="middle" font-size="8" fill="#78909C">Rich: BGM*outputGain + SE (unity)    Classic: BGM*outputGain (SE via hijack)</text>
+  <text x="380" y="490" text-anchor="middle" font-size="8" fill="#78909C">Rich: softLimit(BGM*gain + SE)    Classic: gain=1 copy, otherwise softLimit</text>
 
   <text x="740" y="513" text-anchor="end" font-size="7" fill="#B0BEC5">2026</text>
 </svg>

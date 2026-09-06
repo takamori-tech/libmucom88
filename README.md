@@ -85,7 +85,7 @@ int main()
     MmlParser parser;
     const auto song = parser.parse(
         "#title First melody\n"
-        "D T120 o4 l4 v12 cdefgab>c\n");
+        "D T120 @0 o4 l4 v12 cdefgab>c\n");
 
     int notes = 0;
     for (const auto& event : song.channelEvents[3]) { // Dトラック = 最初のSSG
@@ -126,7 +126,7 @@ D: 8 notes
 void preparePlayback(MmlEngine& engine, IFmEngine& chip)
 {
     MmlParser parser;
-    const auto song = parser.parse("D T120 o4 l4 v12 cdefgab>c\n");
+    const auto song = parser.parse("D T120 @0 o4 l4 v12 cdefgab>c\n");
 
     chip.init(44100);
     engine.init(&chip, 44100);
@@ -154,7 +154,7 @@ void renderPlayback(MmlEngine& engine, int16_t* out, uint32_t frames) noexcept
 | 使いたい音 | 準備するもの |
 | --- | --- |
 | FM | MML内の音色定義、または解析前に `MmlParser::loadVoiceDat()` で音色ファイルを読み込む |
-| SSG | 上の例は外部音色なしで設定可能。必要に応じてMMLでエンベロープを指定する |
+| SSG | 内蔵プリセット `@0` など、または `E` でエンベロープを設定する。上の例は外部音色不要 |
 | ADPCM-Aリズム | 利用可能なリズムROMをバックエンドへ読み込む。下記の生成ツールも利用できる |
 | ADPCM-B楽曲パート | 曲が使用するPCMデータと、対応するバックエンドの読み込み処理 |
 | ADPCM-Bボイス | ボイステーブルとボイス機能を実装したバックエンド。`IFmEngine` のボイス機能は任意実装 |
@@ -174,7 +174,7 @@ void renderPlayback(MmlEngine& engine, int16_t* out, uint32_t frames) noexcept
 | H–J | FM 4–6 |
 | K | ADPCM-B |
 
-例の `D T120 o4 l4 v12 cdefgab>c` は、Dトラックへテンポ・オクターブ・音長・音量を設定し、音階を並べています。
+例の `D T120 @0 o4 l4 v12 cdefgab>c` は、Dトラックへテンポ・内蔵SSG音色・オクターブ・音長・音量を設定し、音階を並べています。
 
 | 記法 | 意味 |
 | --- | --- |
@@ -232,6 +232,8 @@ ctest --test-dir build --output-on-failure --no-tests=error
 `-base existing.bin` を指定すると、既存ROMの未指定スロットを保持して差し替えできます。
 
 ## 詳しい資料
+
+[ドキュメント一覧](docs/README.md) から、互換性・移行・開発向けの資料も参照できます。
 
 | 目的 | 資料 |
 | --- | --- |
