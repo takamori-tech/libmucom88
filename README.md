@@ -250,5 +250,5 @@ ctest --test-dir build --output-on-failure --no-tests=error
 ライブラリのライセンスは [MIT](LICENSE) です。
 エミュレータや音色・PCM・楽曲を組み合わせる場合は、それぞれのライセンス・利用条件も確認してください。
 
-- MML形式: MUCOM88 — 古代祐三 / Yuzo Koshiro
+- MML形式: [MUCOM88](https://www.ancient.co.jp/~mucom88/) — 古代祐三 / Yuzo Koshiro
 - パーサー・シーケンサー: takamori-tech（開発支援: Claude / Anthropic）

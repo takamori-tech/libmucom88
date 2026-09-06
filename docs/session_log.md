@@ -1,5 +1,11 @@
 # libmucom88 session log
 
+## 2026-09-06 MUCOM88公式ページへのリンク
+
+利用者の指定でREADMEのクレジット内MUCOM88を株式会社エインシャントの公式ページへリンク。
+リンク先の本文を取得確認、git diff --check PASS。文書のみのためビルドskip。自己レビュー。
+既存のmain/commit/push承認を適用し、反映後のremote SHA一致を確認する。
+
 ## 2026-09-06 README全面再構成
 
 利用者の追加依頼により、公開ライブラリを初めて使う人向けにREADMEを一から再構成。
