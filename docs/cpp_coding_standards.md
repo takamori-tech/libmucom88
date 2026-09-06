@@ -10,7 +10,7 @@ mucom88v 版からその点を翻案している。CLAUDE.md の「C++コーデ�
 - コアに `.cpp` を追加しない。コア実装を `include/mucom88/*.hpp` に置く。tests/toolsの `.cpp` は対象外（`#pragma once`、include guard 不可）
 - `fm_common.hpp` は mucom88v・CLAUDIUS と共有するため、シグネチャ・enum 値・構造体レイアウト・
   デフォルト引数の破壊的変更は後方互換性を壊す。変更時は両利用側のビルドへの影響を確認する
-- 単体検証: `g++ -std=c++17 -Wall -Wextra -I include test.cpp`（警告ゼロ）
+- 単体検証は [CLAUDE.md](../CLAUDE.md)「テスト」のCMake/CTestを使う。
 
 ## 静的解析
 

@@ -1,5 +1,29 @@
 # libmucom88 session log
 
+## 2026-09-06 Codex単独運用の実行確認
+
+追加依頼により、a6d8d07の現行規約をOpenAI公式best practicesと再照合し、
+別のCodex担当で読み取り専用の独立レビューを実施した。Claude CLI・認証・skillを要求する矛盾はなし。
+詳細C++規約に残る存在しないtest.cppの検証例を指摘として受領し、CMake/CTestの正本参照へ修正。
+AGENTS.mdに独立リポジトリをCodexプロジェクトとして開く導線と、指示読み込み確認を追記した。
+
+単体手順を実行して確認（ソース a6d8d07、AppleClang 21.0.0.21000101 / CMake 4.4.3）:
+
+```bash
+cmake -S /Users/moriyata/git-projects/libmucom88 -B /tmp/libmucom88-codex-standalone-20260906 -DCMAKE_BUILD_TYPE=Release -DLIBMUCOM88_BUILD_TOOLS=ON -DLIBMUCOM88_BUILD_TESTS=ON
+cmake --build /tmp/libmucom88-codex-standalone-20260906 --parallel 8
+ctest --test-dir /tmp/libmucom88-codex-standalone-20260906 --output-on-failure --no-tests=error
+```
+
+全コマンドexit 0。CTest: `100% tests passed out of 8`、実行時間2.06秒。
+adpcm_a_roundtrip / chip_calibration / mml_render_mixed_limit / mml_portamento_octave /
+logical_stem_mixer / post_chip_processor / regression_metrics / drumkit_gen_wavparse が全てPassed。
+一時ログ: `/tmp/libmucom88-codex-configure.log`、`/tmp/libmucom88-codex-build.log`、`/tmp/libmucom88-codex-ctest.log`。
+これはコア単体の実行証拠。optional ymfm・consumer全曲回帰・DAW/実音は今回の文書変更ではskip。
+新規Codex CLI起動そのもののスモークは未実施。独立レビューの実施と区別する。
+今回の変更はAGENTS.md、docs/cpp_coding_standards.md、本ログの3文書のみ。
+ソース・依存gitlink・ライセンス・個人設定を変更しない。commit/push結果はgit/remoteが正本。
+
 ## 2026-09-06 開発規約の見直し
 
 利用者からmucom88vとリンク先libmucom88の運用見直しを依頼された。

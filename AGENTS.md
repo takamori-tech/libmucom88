@@ -4,6 +4,13 @@ C++17ヘッダーオンリーのMMLライブラリ。技術・API・検証の正
 Codexが計画・実装・検証・自己レビュー・引き継ぎを担当する。Claude CLI・認証・PM・
 `.claude/` の存在を必須にしない。旧モデル分担より本書を優先する。
 
+## 開始する場所
+
+consumerの `vendor/libmucom88` ではなく、独立したlibmucom88リポジトリをCodexのプロジェクトとして開く。
+CLIならそのルートで `codex` を起動する。個人設定・利用モデルはそのまま使用できる。
+新規セッションでは、有効な指示ファイルと本書/CLAUDE.mdの適用を確認する。
+`.claude/` がない環境でも本書とCLAUDE.mdだけで実装・検証・レビューを進められる。
+
 ## 作業の進め方
 
 - `git status --short`、branchと直近commit、[session log](docs/session_log.md) の最新記録を確認する。
