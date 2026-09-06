@@ -1,5 +1,11 @@
 # libmucom88 session log
 
+## main同期結果（2026-09-06）
+
+反映commit `69746d26bf13` の通常pushが成功し、remote mainとのSHA一致を確認。
+作業branchはmain。公開範囲はPublic。この結果記録は反映commitの後続。
+次回はmainで開始する。製品の未確認・既知課題を同期成功で解消済みと扱わない。
+
 ## 2026-09-06 main統合と公開READMEの更新
 
 利用者がmainへのcommit/pushを依頼し、PublicのREADMEから非公開利用先の言及を削除するよう追加指定。
