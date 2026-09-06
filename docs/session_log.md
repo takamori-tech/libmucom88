@@ -1,5 +1,20 @@
 # libmucom88 session log
 
+## 2026-09-06 README全面再構成
+
+利用者の追加依頼により、公開ライブラリを初めて使う人向けにREADMEを一から再構成。
+日本語本文と短い英語概要、用途・導入・実行できる解析例・音声組込・制約・検証・詳細資料の順に整理。
+非公開利用先への言及を含めず、API一覧と開発履歴の重複を避けた。ソース/API/依存/ライセンス変更なし。
+
+検証: 掲載解析例をC++17/Wall/Wextraでcompile/run、exit0、出力はFirst melody / D: 8 notes。
+音声組込例は-fsyntax-only exit0。mucom88::mucom88をリンクする別CMake consumerをbuild/runし、同じ出力を確認。
+リンク先・コードフェンス・空白・非公開名不掲載を検査、git diff --check PASS。
+ログと一時検証コードは /private/tmp/libmucom88-readme-rewrite/。
+ライブラリ全体のビルド/回帰はskip（文書のみ）。実音はNOT_VERIFIABLE。
+Codex自己レビューに加え、読み取り担当がAPI/CMake/制約の事実を照合。正式な独立承認ゲートではない。
+前のmain/commit/pushの明示依頼を適用し、この文書変更もmainへcommit/pushしてremote SHAを照合する。
+次回はmainで開始し、利用者の次の依頼に従う。
+
 ## main同期結果（2026-09-06）
 
 反映commit `69746d26bf13` の通常pushが成功し、remote mainとのSHA一致を確認。
