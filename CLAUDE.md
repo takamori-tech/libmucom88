@@ -36,19 +36,19 @@ IFmEngine ── 抽象インターフェース（利用側で実装、または
 
 ## 利用プロジェクト
 
-- **MUCOM88V** (`takamori-tech/mucom88v`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
-- **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。mucom88v 経由の nested ではない）
+- **OPSynth** (`takamori-tech/OPSynth`) — YM2608 VST/AUプラグイン。このライブラリを git submodule として参照
+- **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム。このライブラリを git submodule として**直接**参照（`vendor/libmucom88`。OPSynth 経由の nested ではない）
 
 ## 正本と変更フロー
 
 修正元は独立した `takamori-tech/libmucom88` リポジトリ。consumer 内の submodule を直接編集しない。
-mucom88v と CLAUDIUS は、それぞれ `vendor/libmucom88` を直接参照する。
+OPSynth と CLAUDIUS は、それぞれ `vendor/libmucom88` を直接参照する。
 
 1. 今回の依頼・Issue、git status、branch、現行コードを確認し、関連する修正を本リポジトリで実施する。
 2. 本書の単体検証を行う。公開APIならAPI referenceとintegration guide、MML挙動ならZ80比較表を更新する。
 3. consumer 更新が承認範囲なら、到達可能な修正commitへ各consumerのgitlinkを更新する。
    自動的にmainへpushしたり、CLAUDIUSへ更新を波及させたりしない。文書だけの変更はgitlink更新を必須にしない。
-4. mucom88v では同リポジトリの AGENTS.md を読み、正本ビルド・日時確認・必要な回帰を行う。
+4. OPSynth では同リポジトリの AGENTS.md を読み、正本ビルド・日時確認・必要な回帰を行う。
    `verify.sh` はsubmodule updateを行うため、候補commitがindexのgitlinkと一致することを確認してから実行する。
    一致しない状態で検証して古いcommitへ戻した結果を、新しいcommitの検証としない。
 5. CLAUDIUS も独自の規約とテストに従う。consumerごとに検証済みcommitと未確認事項を記録する。
@@ -86,7 +86,7 @@ CLAUDIUSプロジェクトと統一したC++コーディング基準。Core Guid
 
 - OpenMUCOM88（Z80 VM + fmgen）と機能的に完全一致を目指す
 - 許容差異: Z80 VM起動遅延、Timer-B 0x27レジスタ書き込み回数差（ハードウェア由来）
-- muc_compare / muc_regtest（mucom88vリポジトリの tools/）で回帰テスト
+- muc_compare / muc_regtest（OPSynthリポジトリの tools/）で回帰テスト
 - 目標: avgRMS ~1.0（0.95-1.05 圏内）、全曲 Median ~1.000
 - 差分があれば Z80 music.asm を参照して根本原因を特定・修正
 - MmlEngine と Z80 正本の差分表: [Z80比較表](docs/Z80_vs_MmlEngine.md)（エンジン挙動変更時は更新）
@@ -107,11 +107,11 @@ ctest --test-dir build --output-on-failure --no-tests=error
 optional `ymfm_engine.hpp` を変更した場合は、利用側の実際のymfmヘッダ・ソースを使う
 compile/linkと関連動作確認も必要。コア単体テストだけではoptional adapterを検証したことにならない。
 
-MML/音声挙動変更の全曲互換性は mucom88v の fmgen oracle で確認する。
+MML/音声挙動変更の全曲互換性は OPSynth の fmgen oracle で確認する。
 単体テストの成功を全曲・MIDI・DAW・実音の成功へ広げない。consumer更新を行う場合のコマンド:
 
 ```bash
-# mucom88v リポジトリルートで実行
+# OPSynth リポジトリルートで実行
 ./scripts/build_release_artifacts.sh
 ls -la build/OPSynth_artefacts/Release/Standalone/OPSynth.app/Contents/MacOS/OPSynth
 ./scripts/verify.sh

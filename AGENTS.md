@@ -11,6 +11,13 @@ CLIならそのルートで `codex` を起動する。個人設定・利用モ�
 新規セッションでは、有効な指示ファイルと本書/CLAUDE.mdの適用を確認する。
 `.claude/` がない環境でも本書とCLAUDE.mdだけで実装・検証・レビューを進められる。
 
+## 設定の継承
+
+個人設定は `~/.codex/config.toml` を使い、プロジェクト専用の上書きが必要な場合だけ
+`.codex/config.toml` を追加する。モデル固定や承認無効化をプロジェクト規約へ埋め込まない。
+consumerの作業時は各々のAGENTS.mdを読み、vendorのコピーとsubmoduleを区別する。
+文書のみの運用変更で依存を更新しない。
+
 ## 作業の進め方
 
 - `git status --short`、branchと直近commit、[session log](docs/session_log.md) の最新記録を確認する。

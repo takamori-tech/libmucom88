@@ -1,5 +1,46 @@
 # libmucom88 session log
 
+## 2026-09-06 main統合と公開READMEの更新
+
+利用者がmainへのcommit/pushを依頼し、PublicのREADMEから非公開利用先の言及を削除するよう追加指定。
+公開範囲はPublicを維持。READMEはT/t、マクロ定義、renderMixedの例、単体8テスト、検証の限界を現行実装に合わせた。
+CMake configure/build/CTest exit0、8/8 PASS（1.95秒）。掲載C++例も-fsyntax-only exit0、警告なし。
+ソース/API変更なし。git diff --checkを確認し、mainへfast-forwardして通常pushする。
+次回はmainで開始し、HEADとorigin/mainの一致を確認する。
+
+## 2026-09-06 Codex単独運用の整備
+
+利用者のOPSynth関連プロジェクト設定最適化依頼により、Codex単独の指示・依存境界・設定継承を整備。
+既存変更を保持し、コード/API/gitlinkは変更なし。文書のdiff --checkと参照・コマンド照合を実施。
+ビルド・回帰はskip（文書のみ）。Codex自己レビュー。commit/push・外部投稿なし。
+次はプロジェクトルートの新規セッションで指示を確認し、利用者の次の依頼に従う。
+
+
+## 2026-09-06 OPSynthへの改名に伴う参照追従
+
+利用者のフォルダ・GitHub改名と参照維持の依頼により、OPSynthへの現行リンクを新パスへ更新。
+本ライブラリのソース/API/gitlinkは変更なし。文書のdiff --checkと参照確認を実施し、
+単体ビルド再実行はskip（文書のみ）。統合結果はOPSynthのdocs/dev/session_handoff.yamlを参照。
+
+## 2026-09-06 音楽制作ソフト監査の再開
+
+利用者の監査継続依頼で、OPSynth/libmucom88/libfmmidiの品質と分割統合を確認した。
+本repoはbe342bd、fix/warning-cleanup、開始clean。ソース・公開API・依存を変更していない。
+音楽用途はMUC楽曲の試聴・再生と音色作りを支える解析/シーケンス。
+
+報告正本: [三リポジトリ監査](../../OPSynth/docs/dev/architecture_audit_2026-09-06.md)。
+再現資料は同repo docs/dev/audit_evidence/2026-09-06/。
+MMLのC/Tと相対音量の後続演算でUBSan停止2経路を再現。readIntの9桁制限は存在する。
+ループ総展開量制限、integration_guide.mdの表示目的の非atomic読取説明も改善項目。
+parser/engineの公開ファサード・ヘッダーオンリーを維持し、検証/診断を先に整理する提案。
+修正未実装。通常自己監査の読み取り分担であり、独立承認ゲートではない。
+
+本repo単体は前回8/8 PASS・1.96秒の実ログとソース一致を親が確認し、再実行skip。
+OPSynth consumerは9f2ca3e（本repoとの差は運用文書のみ）を使い、Release3形式・verifyを今回PASS。
+MML30秒127 OK/5 compile failed、Mean1.001/Median1.002、>=0.8 127/127、exit0。
+実音・DAWはNOT_VERIFIABLE。commit/pushなし、終了diff --check PASS。追加は本記録のみ。
+
+
 ## 2026-09-06 Codex単独運用の実行確認
 
 追加依頼により、a6d8d07の現行規約をOpenAI公式best practicesと再照合し、

@@ -3,7 +3,7 @@
 ## 背景
 
 libmucom88は以下の2プロジェクトからのみ参照されている:
-- **MUCOM88V** (`takamori-tech/mucom88v`) — VST/AUプラグイン
+- **OPSynth** (`takamori-tech/OPSynth`) — VST/AUプラグイン
 - **CLAUDIUS** (`takamori-tech/rpi5-native-game`) — レトロSTGゲーム
 
 両プロジェクトの全ソースコードをスキャンし、libmucom88のパブリックAPIの使用状況を調査した。
@@ -111,6 +111,6 @@ ODRリスクは `inline` で解消済みだが、API表面の明確化のため�
 ## 検証
 
 ```bash
-cd ~/git-projects/mucom88v && cmake --build build -- -j8
+cd ~/git-projects/OPSynth && cmake --build build -- -j8
 build/muc_regtest -sec 30
 ```
